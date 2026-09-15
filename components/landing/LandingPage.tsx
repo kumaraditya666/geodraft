@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { ArrowRight, Box, DraftingCompass, MousePointerClick, Play, Ruler, ScanLine, Layers, FileOutput } from "lucide-react";
 import { useStore } from "@/store/useStore";
 import { EXAMPLES } from "@/lib/examples";
+import Footer from "@/components/ui/Footer";
 
 const HeroBackground = dynamic(() => import("./HeroBackground"), { ssr: false });
 
@@ -138,6 +139,7 @@ export default function LandingPage() {
           </div>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

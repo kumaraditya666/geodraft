@@ -15,6 +15,7 @@ import AllViews from "@/components/projection/AllViews";
 import StepsBar from "@/components/steps/StepsBar";
 import DrawingSheet from "@/components/sheet/DrawingSheet";
 import ProjectionLab from "@/components/lab/ProjectionLab";
+import Footer from "@/components/ui/Footer";
 
 const Viewer3D = dynamic(() => import("@/components/viewer3d/Viewer3D"), { ssr: false });
 
@@ -248,6 +249,7 @@ export default function Workspace() {
             </div>
           </div>
         )}
+        <Footer compact />
       </div>
       <DrawingSheet />
     </div>
