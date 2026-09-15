@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background: #05070d;
+  color: #e2e8f0;
+  font-family: "Space Grotesk", Inter, system-ui, sans-serif;
+}
+
+.ed-grid-bg {
+  background-image:
+    linear-gradient(rgba(148,163,184,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(17,25,40,0.86), rgba(8,13,24,0.86));
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(148,163,184,0.16);
+}
+
+.glow-border {
+  box-shadow: 0 0 0 1px rgba(34,211,238,0.18), 0 8px 40px rgba(34,211,238,0.08);
+}
+
+svg text {
+  user-select: none;
+}
+
+@keyframes lab-march {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+.lab-march {
+  stroke-dasharray: 7 6;
+  animation: lab-march 0.8s linear infinite;
+}
+.lab-march-fast {
+  stroke-dasharray: 7 6;
+  animation: lab-march 0.4s linear infinite;
+}
+@keyframes lab-sweep {
+  0% {
+    transform: translateX(-60px);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(980px);
+    opacity: 0;
+  }
+}
+.lab-sweep {
+  animation: lab-sweep 3.2s ease-in-out infinite;
+}
