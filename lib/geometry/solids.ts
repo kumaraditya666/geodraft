@@ -1,5 +1,7 @@
 import type { BuiltSolid, Edge3D, Face3D, LabeledPoint3D, ParsedQuestion, Vec3 } from "@/types";
 import { add, axisFromAngles, basisForAxis, bboxOf, cross, normalize, scale, sub, v } from "./vectors";
+import { edgeAngle2, spin2 } from "./lamina/Lamina";
+import { trueShapeOf } from "./lamina/index";
 
 const N_SMOOTH = 36;
 
@@ -392,13 +394,17 @@ function buildLine(parsed: ParsedQuestion): BuiltSolid {
 
 function buildPlane(parsed: ParsedQuestion): BuiltSolid {
   const d = parsed.dimensions;
-  const shape = (parsed.planeShape ?? "rectangle").toLowerCase();
+  const shape = (parsed.planeShape ?? "rectangle").toLowerCase().replace(/semi\s*-?\s*circular/g, "semicircular");
   const notes: string[] = [];
-  const tiltHP = parsed.inclinations.HP ?? 30;
-  const yawVP = parsed.inclinations.VP ?? 0;
-  if (parsed.planeMode === "diagonal" && (shape.includes("square") || shape.includes("rect"))) {
+  const quadOnly = shape.includes("square") || shape.includes("rect");
+  if (parsed.planeMode === "diagonal" && quadOnly) {
     return buildDiagonalLamina(parsed, notes);
   }
+  const newMode = parsed.planeMode ?? "edge";
+  if (newMode === "diagonalVP") return buildDiagonalVPLamina(parsed, notes);
+  if (newMode === "vertical") return buildVerticalLamina(parsed, notes);
+  if (newMode === "vpHinge") return buildVpHingeLamina(parsed, notes);
+  if (newMode === "rhombus") return buildRhombusLamina(parsed, notes);
   // Build flat lamina in horizontal plane, then tilt about X by tiltHP, yaw about Z by yawVP
   const mkLocal = (): Vec3[] => {
     if (shape.includes("circle") || shape.includes("circular")) {
@@ -438,20 +444,185 @@ function buildPlane(parsed: ParsedQuestion): BuiltSolid {
     const l = isSquare ? sq : (d.length ?? d.height ?? 40);
     return [v(-w / 2, -l / 2, 0), v(w / 2, -l / 2, 0), v(w / 2, l / 2, 0), v(-w / 2, l / 2, 0)];
   };
-  const tilt = (tiltHP * Math.PI) / 180;
-  const yaw = (yawVP * Math.PI) / 180;
+  // ---- staged pipeline ----
+  // stage 0: hinge axis (X default; Y when the plane must stay perpendicular to VP)
+  const perpVP = parsed.relations?.VP === "perpendicular";
+  const tiltStated = parsed.inclinations.HP !== undefined;
+  const tiltDeg = parsed.inclinations.HP ?? 0;
+  let yawDeg = parsed.inclinations.VP ?? 0;
+  if (perpVP && parsed.inclinations.VP !== undefined) {
+    notes.push(`Yaw ${yawDeg}° omitted — it would break the stated perpendicular-to-VP condition.`);
+    yawDeg = 0;
+  }
+  if (!tiltStated) notes.push("No surface tilt stated — shown flat on HP (true-shape initial position).");
+  // stage 1: normalize the resting edge onto the hinge axis (exact, preserves true shape)
+  const flat0 = mkLocal();
+  const hingeTarget = perpVP ? 90 : 0;
+  const pre = spin2(flat0, hingeTarget - edgeAngle2(flat0, 0, 1)).map((p) => v(p.x, p.y, 0));
+  // stage 2: hinge about the resting-edge axis
+  const tilt = (tiltDeg * Math.PI) / 180;
+  const yaw = (yawDeg * Math.PI) / 180;
   const rotX = (p: Vec3): Vec3 => v(p.x, p.y * Math.cos(tilt) - p.z * Math.sin(tilt), p.y * Math.sin(tilt) + p.z * Math.cos(tilt));
+  const rotY = (p: Vec3): Vec3 => v(p.x * Math.cos(tilt) + p.z * Math.sin(tilt), p.y, -p.x * Math.sin(tilt) + p.z * Math.cos(tilt));
   const rotZ = (p: Vec3): Vec3 => v(p.x * Math.cos(yaw) - p.y * Math.sin(yaw), p.x * Math.sin(yaw) + p.y * Math.cos(yaw), p.z);
-  const local = mkLocal().map((p) => rotZ(rotX(p)));
-  const { pts: sh } = shiftToRest(local, parsed.restingPlane ?? "HP");
+  const hinged = pre.map((p) => (perpVP ? rotY(p) : rotX(p)));
+  // stage 3: yaw about vertical, then seat the resting element
+  const local = hinged.map((p) => rotZ(p));
+  let sh = shiftToRest(local, parsed.restingPlane ?? "HP").pts;
+  // stage 4: VT height offset (only when the VT is horizontal, else it is ill-defined)
+  if (parsed.vtHeightMM !== undefined) {
+    const nn = faceNormal([sh[0], sh[1], sh[2]]);
+    const cc = centroid(sh);
+    if (Math.abs(nn.x) < 1e-9 && Math.abs(nn.z) > 1e-9) {
+      const zvt = cc.z + (nn.y * cc.y) / nn.z;
+      sh = sh.map((p) => v(p.x, p.y, p.z + (parsed.vtHeightMM as number) - zvt));
+      notes.push(`Plane raised so its VT sits ${parsed.vtHeightMM} mm above XY.`);
+    } else {
+      notes.push("VT is not horizontal — the stated VT height cannot anchor the plane; showing seated position.");
+    }
+  }
   const vertices: LabeledPoint3D[] = sh.map((p, i) => ({ id: `v-${i}`, label: labelBase(i), p }));
   const n = faceNormal([sh[0], sh[1], sh[2]]);
   const faces: Face3D[] = [{ id: "lamina", verts: sh.map((_, i) => i), normal: n, center: centroid(sh) }];
   // second face opposite for double-sided visibility
   faces.push({ id: "lamina-back", verts: sh.map((_, i) => i), normal: scale(n, -1), center: centroid(sh) });
   const edges: Edge3D[] = sh.map((_, i) => ({ id: `e-${i}`, a: i, b: (i + 1) % sh.length, faces: [0, 1], sharp: true }));
-  notes.push(`Lamina surface inclined ${tiltHP}° to HP${yawVP ? `, ${yawVP}° to VP` : ""}. One edge rests on HP.`);
+  notes.push(
+    `Lamina staged: true shape → resting edge onto ${perpVP ? "Y" : "X"} hinge → surface ${tiltDeg}° to HP` +
+      `${yawDeg ? `, yaw ${yawDeg}°` : ""}. Resting element seated on ${parsed.restingPlane ?? "HP"}.`
+  );
   return { kind: "plane", parsed, vertices, edges, faces, axisDir: n, baseCenter: centroid(sh), bbox: bboxOf(sh), notes };
+}
+
+/** Shared finish for staged lamina modes: boundary faces (double-sided) + sharp edges. */
+function finishLamina(
+  parsed: ParsedQuestion,
+  notes: string[],
+  corners: Vec3[],
+  extraNote: string
+): BuiltSolid {
+  const n = faceNormal([corners[0], corners[1], corners[2]]);
+  const ctr = centroid(corners);
+  const abc = "abcdefghijklmnopqrstuvwxyz";
+  const vertices: LabeledPoint3D[] = corners.map((p, i) => ({
+    id: `corner-${abc[i] ?? i}`,
+    label: corners.length <= 26 ? labelBase(i) : "",
+    p,
+  }));
+  const faces: Face3D[] = [
+    { id: "lamina", verts: corners.map((_, i) => i), normal: n, center: ctr },
+    { id: "lamina-back", verts: corners.map((_, i) => i), normal: scale(n, -1), center: ctr },
+  ];
+  const edges: Edge3D[] = corners.map((_, i) => ({ id: `e-${i}`, a: i, b: (i + 1) % corners.length, faces: [0, 1], sharp: true }));
+  notes.push(extraNote);
+  return { kind: "plane", parsed, vertices, edges, faces, axisDir: n, baseCenter: ctr, bbox: bboxOf([...corners, ctr]), notes };
+}
+
+/** True shape stood into a VP-parallel plane (sides stay parallel to VP by construction). */
+function buildVerticalLamina(parsed: ParsedQuestion, notes: string[]): BuiltSolid {
+  const { shape: flat, notes: fn } = trueShapeOf(parsed);
+  notes.push(...fn);
+  let pts = flat.points.map((p) => ({ x: p.x, y: p.y }));
+  if (parsed.diamond45 && pts.length === 4) {
+    pts = spin2(pts, 45);
+    notes.push("Square spun 45° in its plane — all sides equally inclined to HP (diamond).");
+  }
+  // stand up: (x, y, 0) -> (x, 0, -y); plane y = 0, true shape faces the front
+  let corners = pts.map((p) => v(p.x, 0, -p.y));
+  const dy = parsed.dimensions.distVP ?? 0;
+  if (parsed.dimensions.distVP === undefined) notes.push("No offset from VP stated — lamina lies in VP (y = 0).");
+  corners = corners.map((p) => v(p.x, p.y + dy, p.z));
+  const minZ = Math.min(...corners.map((p) => p.z));
+  corners = corners.map((p) => v(p.x, p.y, p.z - minZ));
+  return finishLamina(parsed, notes, corners, `Vertical lamina ${dy} mm in front of VP; resting corner seated on HP. Front view shows the true shape.`);
+}
+
+/** Semicircle: diametrical edge pinned in VP, surface hinged off VP about the diameter. */
+function buildVpHingeLamina(parsed: ParsedQuestion, notes: string[]): BuiltSolid {
+  const { shape: flat, notes: fn } = trueShapeOf(parsed);
+  notes.push(...fn);
+  const t = (((parsed.inclinations.VP ?? 30) as number) * Math.PI) / 180;
+  if (parsed.inclinations.VP === undefined) notes.push("Surface tilt to VP unstated — assumed 30°.");
+  // stand into VP: (x, y, 0) -> (x, 0, y); diameter stays along X at z = 0
+  const stood = flat.points.map((p) => v(p.x, 0, p.y));
+  // hinge about the X-axis (diameter line) by -t: bulge swings out to +Y, diameter fixed
+  const out = stood.map((p) => v(p.x, p.y * Math.cos(t) + p.z * Math.sin(t), -p.y * Math.sin(t) + p.z * Math.cos(t)));
+  const minZ = Math.min(...out.map((p) => p.z));
+  const corners = out.map((p) => v(p.x, p.y, p.z - minZ));
+  return finishLamina(parsed, notes, corners, `Diametrical edge pinned in VP; surface hinged ${(t * 180) / Math.PI}° off VP. Diameter doubles as the XY-level edge after seating.`);
+}
+
+/** Rhombus tilted about its short (true-length) diagonal so the plan reads square. */
+function buildRhombusLamina(parsed: ParsedQuestion, notes: string[]): BuiltSolid {
+  const { shape: flat, notes: fn } = trueShapeOf(parsed);
+  notes.push(...fn);
+  const tilt = (((parsed.inclinations.HP ?? 45) as number) * Math.PI) / 180;
+  const yaw = (((parsed.inclinations.VP ?? 0) as number) * Math.PI) / 180;
+  const d1 = flat.dims.d1 ?? 60;
+  const d2 = flat.dims.d2 ?? 40;
+  // tilt about the SHORTER diagonal (it keeps true length in plan)
+  const aboutY = d2 <= d1;
+  const cy = Math.cos(tilt);
+  const sy = Math.sin(tilt);
+  const tilted = flat.points.map((p) =>
+    aboutY ? v(p.x * cy, p.y, p.x * sy) : v(p.x, p.y * cy, p.y * sy)
+  );
+  const cw = Math.cos(yaw);
+  const sw = Math.sin(yaw);
+  const yawed = tilted.map((p) => v(p.x * cw - p.y * sw, p.x * sw + p.y * cw, p.z));
+  const minZ = Math.min(...yawed.map((p) => p.z));
+  const corners = yawed.map((p) => v(p.x, p.y, p.z - minZ));
+  return finishLamina(
+    parsed, notes, corners,
+    `Rhombus hinged about its ${aboutY ? "short QS" : "short PR"} diagonal: PR foreshortens ${d1}→${Math.round(d1 * Math.cos(tilt) * 10) / 10} mm so the top view reads square.`
+  );
+}
+
+/**
+ * Corner-in-VP lamina: true shape stood into VP, spun in-plane so the
+ * corner diagonal lands at the specified front-view angle, then hinged
+ * about the vertical line through the resting corner off VP.
+ */
+function buildDiagonalVPLamina(parsed: ParsedQuestion, notes: string[]): BuiltSolid {
+  const { shape: flat, notes: fn } = trueShapeOf(parsed);
+  notes.push(...fn);
+  const n = flat.points.length;
+  if (n % 2 !== 0) {
+    notes.push("Front-diagonal construction needs an even polygon — falling back to edge tilt.");
+    return buildVerticalLamina(parsed, notes);
+  }
+  const h = (((parsed.inclinations.VP ?? 30) as number) * Math.PI) / 180;
+  if (parsed.inclinations.VP === undefined) notes.push("Surface tilt to VP unstated — assumed 30°.");
+  const target = (((parsed.frontDiagXY ?? 0) as number) * Math.PI) / 180;
+  // spin in-plane so diagonal v0→v(n/2) will land at `target` in front view after hinging:
+  // hinge squeezes horizontal extents ×cos h, so tan(final) = tan(a0)/cos h
+  //   ⇒  a0 = atan(tan(target)·cos h)
+  const p0 = flat.points[0];
+  const pOpp = flat.points[n / 2];
+  const aCur = Math.atan2(pOpp.y - p0.y, pOpp.x - p0.x);
+  const a0 = parsed.frontDiagXY !== undefined ? Math.atan(Math.tan(target) * Math.cos(h)) : aCur;
+  let pts = spin2(flat.points, ((a0 - aCur) * 180) / Math.PI);
+  // stand into VP: (x, y) -> (x, 0, y)
+  let corners = pts.map((p) => v(p.x, 0, p.y));
+  // seat on HP and put the resting corner leftmost so the whole plate swings forward (+Y)
+  const minZ = Math.min(...corners.map((p) => p.z));
+  corners = corners.map((p) => v(p.x, p.y, p.z - minZ));
+  const c0 = corners[0];
+  const shiftX = Math.min(...corners.map((p) => p.x)) - c0.x;
+  const hx = c0.x + shiftX;
+  corners = corners.map((p) => v(p.x + shiftX, p.y, p.z));
+  // hinge about the vertical line through the resting corner
+  const ch = Math.cos(h);
+  const sh = Math.sin(h);
+  corners = corners.map((p) => v(hx + (p.x - hx) * ch, (p.x - hx) * sh, p.z));
+  const solid = finishLamina(parsed, notes, corners, `Corner A pinned in VP; surface hinged ${(h * 180) / Math.PI}° off VP${parsed.frontDiagXY !== undefined ? `; corner diagonal drawn to hit ${parsed.frontDiagXY}° in front view` : ""}.`);
+  if (parsed.frontDiagXY !== undefined) {
+    const A = corners[0];
+    const O = corners[n / 2];
+    const got = (Math.atan2(Math.abs(O.z - A.z), Math.abs(O.x - A.x)) * 180) / Math.PI;
+    solid.notes.push(`Measured front diagonal: ${Math.round(got * 10) / 10}° to XY.`);
+  }
+  return solid;
 }
 
 /**

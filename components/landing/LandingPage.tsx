@@ -17,7 +17,7 @@ const FEATURES = [
   { icon: FileOutput, title: "Drawing Sheet + Export", desc: "A4-style sheet with title block, scale and PNG/SVG export." },
 ];
 
-const QUICK = ["cone-vp30", "cyl-vp", "prism-hp", "pyr-hp", "line-hp-vp", "plane-hp", "cone-section", "cyl-hp"];
+const QUICK = ["cone-vp30", "cyl-vp", "prism-hp", "pyr-hp", "line-hp-vp", "plane-hp", "pent-40hp", "hex-3540", "rhombus-sq", "semi-vp", "cone-section", "cyl-hp"];
 
 export default function LandingPage() {
   const question = useStore((s) => s.question);

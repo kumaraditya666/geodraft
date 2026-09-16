@@ -5,6 +5,7 @@ import { buildProjection, projectPoint } from "@/lib/projection/projectionEngine
 import { measuredAngles } from "@/lib/projection/angleEngine";
 import { trueDims } from "@/lib/projection/dimensionEngine";
 import { buildDXF } from "@/lib/projection/dxfExporter";
+import { computeTraces } from "@/lib/projection/tracesEngine";
 import { runAccuracyChecks } from "@/lib/verify/accuracy";
 
 const CONE_Q =
@@ -147,6 +148,163 @@ describe("no-guess error handling", () => {
     expect(p.inclinations.VP).toBeUndefined();
     expect(p.unclear.some((u) => u.includes("with HP or VP"))).toBe(true);
   });
+  it("missing diameter is flagged", () => {
+    const p = parseEngineeringQuestion("A cone of height 70 mm rests on HP.");
+    expect(p.unclear.some((u) => u.toLowerCase().includes("diameter"))).toBe(true);
+  });
+});
+
+const seg3 = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) =>
+  Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+
+describe("sheet test 1: triangle with VT 25 above XY, side 45 to VP", () => {
+  const Q = "An equilateral triangle of side 55 mm has its VT parallel to and 25 mm above XY. It has no HT. Draw its projections when one of its sides is inclined at 45 degrees to the VP.";
+  it("parses shape, VT data and side angle", () => {
+    const p = parseEngineeringQuestion(Q);
+    expect(p.solid).toBe("plane");
+    expect(p.dimensions.side).toBe(55);
+    expect(p.vtHeightMM).toBe(25);
+    expect(p.noHT).toBe(true);
+    expect(p.inclinations.VP).toBe(45);
+  });
+  it("builds exact flat triangle floating at VT height", () => {
+    const s = buildSolid(parseEngineeringQuestion(Q));
+    const v = s.vertices.filter((x) => x.id.startsWith("v-")).map((x) => x.p);
+    expect(v.length).toBe(3);
+    expect(seg3(v[0], v[1])).toBeCloseTo(55, 6);
+    expect(seg3(v[1], v[2])).toBeCloseTo(55, 6);
+    expect(seg3(v[2], v[0])).toBeCloseTo(55, 6);
+    for (const p of v) expect(p.z).toBeCloseTo(25, 6); // horizontal plane at VT height
+    const tr = computeTraces(s.axisDir, s.baseCenter);
+    expect(tr.ht).toBeNull(); // no HT: parallel to HP
+    expect(tr.vt).not.toBeNull();
+    expect(tr.vt!.p.z).toBeCloseTo(25, 6);
+  });
+});
+
+describe("sheet test 2: square corner on HP, sides parallel VP", () => {
+  const Q = "A square EFGH of side 50 mm has a corner on the HP and 30 mm in front of the VP. All the sides of the square are equally inclined to the HP and parallel to the VP. Draw its projections and show its traces.";
+  it("parses vertical diamond construction", () => {
+    const p = parseEngineeringQuestion(Q);
+    expect(p.solid).toBe("plane");
+    expect(p.planeMode).toBe("vertical");
+    expect(p.diamond45).toBe(true);
+    expect(p.dimensions.distVP).toBe(30);
+    expect(p.relations?.VP).toBe("parallel");
+  });
+  it("front shows true 50mm square, plane 30mm off VP, HT but no VT", () => {
+    const s = buildSolid(parseEngineeringQuestion(Q));
+    for (const v of s.vertices) {
+      if (v.id === "center") continue;
+      expect(v.p.y).toBeCloseTo(30, 6);
+    }
+    const f = buildProjection(s, "front");
+    const c = ["corner-a", "corner-b", "corner-c", "corner-d"].map((id) => f.points.find((p) => p.id === id)!);
+    for (let i = 0; i < 4; i++) {
+      const a = c[i];
+      const b = c[(i + 1) % 4];
+      expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeCloseTo(50, 4);
+    }
+    const tr = computeTraces(s.axisDir, s.baseCenter);
+    expect(tr.vt).toBeNull();
+    expect(tr.ht).not.toBeNull();
+  });
+});
+
+describe("sheet test 3: pentagon edge on ground, 40 HP, perpendicular VP", () => {
+  const Q = "A regular pentagon of side 30 mm has one side on the ground. Its plane is inclined at 40 degrees to the HP and perpendicular to the VP. Draw its projections and show its traces.";
+  it("builds exact pentagon perpendicular to VP with an edge on HP", () => {
+    const p = parseEngineeringQuestion(Q);
+    expect(p.planeMode).toBe("edge");
+    expect(p.relations?.VP).toBe("perpendicular");
+    const s = buildSolid(p);
+    const v = s.vertices.filter((x) => x.id.startsWith("v-")).map((x) => x.p);
+    expect(v.length).toBe(5);
+    for (let i = 0; i < 5; i++) {
+      expect(seg3(v[i], v[(i + 1) % 5])).toBeCloseTo(30, 6);
+    }
+    expect(Math.abs(s.axisDir.y)).toBeLessThan(1e-6); // normal ⊥ ŷ ⇒ plane ⊥ VP
+    const grounded = s.edges.filter((e) => Math.abs(s.vertices[e.a].p.z) < 1e-6 && Math.abs(s.vertices[e.b].p.z) < 1e-6);
+    expect(grounded.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("sheet test 4: hexagon resting side 40 VP, surface 40 HP", () => {
+  const Q = "Draw the projections of a regular hexagon of side 35 mm having one of its sides in the HP and the resting side makes an angle of 40 degrees to the VP. The planar surface makes an angle of 40 degrees to the HP.";
+  it("builds exact hexagon with a full edge seated on HP", () => {
+    const p = parseEngineeringQuestion(Q);
+    expect(p.inclinations.HP).toBe(40);
+    expect(p.inclinations.VP).toBe(40);
+    const s = buildSolid(p);
+    const v = s.vertices.filter((x) => x.id.startsWith("v-")).map((x) => x.p);
+    expect(v.length).toBe(6);
+    for (let i = 0; i < 6; i++) {
+      expect(seg3(v[i], v[(i + 1) % 6])).toBeCloseTo(35, 6);
+    }
+    const seated = s.edges.filter((e) => Math.abs(s.vertices[e.a].p.z) < 1e-6 && Math.abs(s.vertices[e.b].p.z) < 1e-6);
+    expect(seated.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("sheet test 5: rhombus diagonals 60/40, square top view", () => {
+  const Q = "PQRS is a rhombus having diagonal PR = 60 mm and QS = 40 mm and they are perpendicular to each other. The plane of the rhombus is inclined with the HP such that its top view appears to be a square. The top view of PR makes 60 degrees with the VP. Draw its projections and determine the inclination of the plane with the HP.";
+  it("derives tilt 48.2 deg and keeps diagonals exact", () => {
+    const p = parseEngineeringQuestion(Q);
+    expect(p.planeMode).toBe("rhombus");
+    expect(Math.abs((p.inclinations.HP ?? 0) - 48.2)).toBeLessThan(0.15);
+    const s = buildSolid(p);
+    const g = (id: string) => s.vertices.find((v) => v.id === id)!.p;
+    // finishLamina order follows the flat rhombus: PR = corner-a/corner-c, QS = corner-b/corner-d
+    expect(seg3(g("corner-a"), g("corner-c"))).toBeCloseTo(60, 6);
+    expect(seg3(g("corner-b"), g("corner-d"))).toBeCloseTo(40, 6);
+    const dot =
+      (g("corner-a").x - g("corner-c").x) * (g("corner-b").x - g("corner-d").x) +
+      (g("corner-a").y - g("corner-c").y) * (g("corner-b").y - g("corner-d").y) +
+      (g("corner-a").z - g("corner-c").z) * (g("corner-b").z - g("corner-d").z);
+    expect(Math.abs(dot)).toBeLessThan(1e-4); // diagonals stay perpendicular
+    const t = buildProjection(s, "top");
+    const tp = (id: string) => t.points.find((q) => q.id === id)!;
+    const prTop = Math.hypot(tp("corner-a").x - tp("corner-c").x, tp("corner-a").y - tp("corner-c").y);
+    const qsTop = Math.hypot(tp("corner-b").x - tp("corner-d").x, tp("corner-b").y - tp("corner-d").y);
+    expect(Math.abs(prTop - qsTop)).toBeLessThan(0.6); // plan reads square
+  });
+});
+
+describe("sheet test 6: semicircle diametrical edge on VP, 30 to VP", () => {
+  const Q = "A semi circular lamina of diameter 50 mm rests with its diametrical edge on the VP and the planar surface makes an angle of 30 degrees to the VP. Draw its projections.";
+  it("pins the 50mm diameter in VP with surface at 30 deg", () => {
+    const p = parseEngineeringQuestion(Q);
+    expect(p.planeMode).toBe("vpHinge");
+    const s = buildSolid(p);
+    const dia = s.vertices.slice(0, 25).map((v) => v.p); // diameter chain (25 pts)
+    expect(seg3(dia[0], dia[dia.length - 1])).toBeCloseTo(50, 4);
+    for (const q of [dia[0], dia[dia.length - 1]]) expect(Math.abs(q.y)).toBeLessThan(1e-6);
+    const n = s.axisDir;
+    const dihedral = (Math.acos(Math.min(1, Math.abs(n.y) / Math.hypot(n.x, n.y, n.z))) * 180) / Math.PI;
+    expect(Math.abs(dihedral - 30)).toBeLessThan(0.6);
+  });
+});
+
+describe("sheet test 7: hex corner in VP, surface 30 VP, front diagonal 45 XY", () => {
+  const Q = "A hexagonal plate of side 40 mm is resting on a corner in VP, with its surface making an angle of 30° with VP. The front view of the diagonal passing through that corner is inclined at 45° to the XY line. Draw the projections of the hexagonal plate.";
+  it("pins corner in VP, surface 30 deg off VP, front diagonal 45 deg", () => {
+    const p = parseEngineeringQuestion(Q);
+    expect(p.planeMode).toBe("diagonalVP");
+    expect(p.frontDiagXY).toBe(45);
+    const s = buildSolid(p);
+    const g = (id: string) => s.vertices.find((v) => v.id === id)!.p;
+    expect(Math.abs(g("corner-a").y)).toBeLessThan(1e-6); // resting corner in VP
+    const n = s.axisDir;
+    const dihedral = (Math.acos(Math.min(1, Math.abs(n.y) / Math.hypot(n.x, n.y, n.z))) * 180) / Math.PI;
+    expect(Math.abs(dihedral - 30)).toBeLessThan(0.6);
+    const A = g("corner-a");
+    const O = g("corner-d");
+    const frontAng = (Math.atan2(Math.abs(O.z - A.z), Math.abs(O.x - A.x)) * 180) / Math.PI;
+    expect(Math.abs(frontAng - 45)).toBeLessThan(1.2);
+  });
+});
+
+describe("no-guess error handling (kept)", () => {
   it("missing diameter is flagged", () => {
     const p = parseEngineeringQuestion("A cone of height 70 mm rests on HP.");
     expect(p.unclear.some((u) => u.toLowerCase().includes("diameter"))).toBe(true);

@@ -14,6 +14,7 @@ import { buildDXF } from "@/lib/projection/dxfExporter";
 import { downloadSVG, downloadText, printSheet } from "@/lib/projection/svgExporter";
 import { runAccuracyChecks, checkDrawing } from "@/lib/verify/accuracy";
 import LabViewsSVG from "./LabViewsSVG";
+import TrueShapeModal from "./TrueShapeModal";
 
 type Focus = "all" | ViewKind;
 
@@ -31,12 +32,14 @@ export default function ProjectionLab() {
   const showProj = useStore((s) => s.showProjectors);
   const showAngles = useStore((s) => s.showAngles);
   const showLabels = useStore((s) => s.showLabels);
+  const showTraces = useStore((s) => s.showTraces);
 
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [animate, setAnimate] = useState(true);
   const [focus, setFocus] = useState<Focus>("all");
   const [checking, setChecking] = useState(false);
+  const [showTrue, setShowTrue] = useState(false);
 
   const steps = useMemo(() => (solid ? buildDrawingGuide(solid) : []), [solid]);
   const mi = methodInfo(method as ProjectionMethod);
@@ -134,6 +137,13 @@ export default function ProjectionLab() {
           <Toggle on={showProj} label="Projectors" onClick={() => set({ showProjectors: !showProj })} />
           <Toggle on={showAngles} label="Angles" onClick={() => set({ showAngles: !showAngles })} />
           <Toggle on={showLabels} label="Labels" onClick={() => set({ showLabels: !showLabels })} />
+          <Toggle on={showTraces} label="Traces" onClick={() => set({ showTraces: !showTraces })} />
+          <span className="mx-1 h-5 w-px bg-white/10" />
+          {solid.kind === "plane" && (
+            <button onClick={() => setShowTrue(true)} className="rounded-lg bg-cyan-300/15 px-3 py-1.5 text-[12px] font-bold text-cyan-200">
+              TRUE SHAPE
+            </button>
+          )}
           <span className="mx-1 h-5 w-px bg-white/10" />
           <button onClick={() => set({ centerMode: "2d", sidebar: "Visualizer" })} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[12px] font-bold text-slate-950">
             <Boxes size={13} /> 3D → 2D sheet
@@ -245,6 +255,7 @@ export default function ProjectionLab() {
           </button>
         </div>
       </div>
+      {showTrue && <TrueShapeModal solid={solid} onClose={() => setShowTrue(false)} />}
     </div>
   );
 }

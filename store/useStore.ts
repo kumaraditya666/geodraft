@@ -22,6 +22,7 @@ interface State {
   showHiddenLines: boolean;
   showDims: boolean;
   showProjectors: boolean;
+  showTraces: boolean;
   projectionMethod: ProjectionMethod;
   centerMode: "3d" | "2d";
   studentMode: boolean;
@@ -80,6 +81,7 @@ export const useStore = create<State>((set, get) => ({
   showHiddenLines: true,
   showDims: true,
   showProjectors: true,
+  showTraces: true,
   projectionMethod: "first",
   centerMode: "3d",
   studentMode: true,

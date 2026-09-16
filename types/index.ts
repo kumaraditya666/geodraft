@@ -37,8 +37,17 @@ export interface ParsedQuestion {
   sides?: number;
   planeShape?: string;
   /** lamina construction: edge-resting tilt vs diagonal-horizontal corner resting */
-  planeMode?: "edge" | "diagonal";
+  planeMode?: "edge" | "diagonal" | "diagonalVP" | "vertical" | "vpHinge" | "rhombus";
   diagonalAngleVP?: number;
+  restingKind?: "edge" | "corner";
+  relations?: { HP?: "parallel" | "perpendicular"; VP?: "parallel" | "perpendicular" };
+  vtHeightMM?: number;
+  noHT?: boolean;
+  rhombusSquareTop?: boolean;
+  diamond45?: boolean;
+  triKind?: "equilateral" | "isosceles" | "scalene";
+  triSides?: [number, number, number];
+  frontDiagXY?: number;
   raw: string;
   confidence: number;
   unclear: string[];

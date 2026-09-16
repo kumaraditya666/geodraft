@@ -262,6 +262,10 @@ function lineGuide(s: BuiltSolid): GuideStep[] {
 
 function planeGuide(s: BuiltSolid): GuideStep[] {
   if (s.parsed.planeMode === "diagonal") return diagonalLaminaGuide(s);
+  if (s.parsed.planeMode === "diagonalVP") return diagonalVPLaminaGuide(s);
+  if (s.parsed.planeMode === "vertical") return verticalLaminaGuide(s);
+  if (s.parsed.planeMode === "vpHinge") return vpHingeGuide(s);
+  if (s.parsed.planeMode === "rhombus") return rhombusGuide(s);
   const tilt = s.parsed.inclinations.HP ?? 30;
   const shape = s.parsed.planeShape ?? "rectangular";
   const w = t(s.parsed.dimensions.width ?? s.parsed.dimensions.side ?? 60);
@@ -329,6 +333,117 @@ function diagonalLaminaGuide(s: BuiltSolid): GuideStep[] {
         : `Horizontal projectors build the narrow side strip. Dimension side ${side} mm, tilt ${tilt}°, DB ${yaw}° to VP — all true sizes.`,
       views: ["side", "front"],
       pointId: "corner-d",
+    },
+  ];
+}
+
+function verticalLaminaGuide(s: BuiltSolid): GuideStep[] {
+  const dist = s.parsed.dimensions.distVP;
+  return [
+    xyStep(),
+    {
+      title: "Front view first: true shape, sides parallel to VP",
+      how: `Because every side stays parallel to VP, the FRONT view (above XY) shows the undistorted true shape. Draw it with the resting corner sitting exactly on the XY level.${dist !== undefined ? ` The whole plane floats ${dist} mm in front of VP.` : ""}`,
+      views: ["front"],
+    },
+    {
+      title: "Top view collapses to a line",
+      how: `A plane parallel to VP has zero depth variation — in the top view (below XY) the entire lamina collapses to one straight horizontal line${dist !== undefined ? `, ${dist} mm below XY` : ""}. That line IS the top view; nothing hides behind it.`,
+      views: ["top", "front"],
+    },
+    {
+      title: "Projectors + traces",
+      how: `Vertical projectors still link each corner front↔top. The plane never meets VP, so there is No VT; its HT is the single line where it would meet HP — extended in the top view.`,
+      views: ["front", "top"],
+    },
+    {
+      title: "Side view + true dimensions",
+      how: `Horizontal projectors give the edge-on side strip. Dimension true sizes only — the front view already shows them un-foreshortened.`,
+      views: ["side", "front"],
+    },
+  ];
+}
+
+function diagonalVPLaminaGuide(s: BuiltSolid): GuideStep[] {
+  const tilt = s.parsed.inclinations.VP ?? 30;
+  const fa = s.parsed.frontDiagXY;
+  return [
+    xyStep(),
+    {
+      title: "True shape stood into VP",
+      how: `Draw the true shape upright in the VP plane with the resting corner at the origin. In the front view you see it undistorted at this stage.`,
+      views: ["front"],
+    },
+    {
+      title: `Hinge ${tilt}° off VP about the corner`,
+      how: `Rotate the plate about the vertical line through the resting corner until its surface makes ${tilt}° with VP. The corner stays pinned in VP; the rest swings forward. Front heights never change — only depths do.`,
+      views: ["front", "top"],
+    },
+    ...(fa !== undefined
+      ? [
+          {
+            title: `Corner diagonal hits ${fa}° in front`,
+            how: `Before hinging, the plate is spun in its own plane so that after the ${tilt}° hinge squeeze (×cos ${tilt}° horizontally) the corner diagonal lands at exactly ${fa}° to XY. Verify with a protractor on the front view.`,
+            views: ["front"] as ("front" | "top" | "side")[],
+          },
+        ]
+      : []),
+    {
+      title: "Top view + traces + dimensions",
+      how: `Project down to the foreshortened top outline. Draw VT (the plate meets VP along the hinge line) and HT, then dimension true side lengths — projections show them squeezed, dimensions show the truth.`,
+      views: ["top", "side", "front"],
+    },
+  ];
+}
+
+function vpHingeGuide(s: BuiltSolid): GuideStep[] {
+  const tilt = s.parsed.inclinations.VP ?? 30;
+  const dia = t(s.parsed.dimensions.diameter ?? 50);
+  return [
+    xyStep(),
+    {
+      title: `Diameter ⌀${dia} mm pinned in VP`,
+      how: `Draw the diametrical edge as a line in the front view (it lies in VP). This edge never moves again — it is the hinge of the whole construction.`,
+      views: ["front"],
+    },
+    {
+      title: `Hinge the surface ${tilt}° off VP`,
+      how: `Swing the semicircular bulge forward off VP about the diameter until the surface makes ${tilt}° with VP. In the front view the arc squeezes horizontally by cos ${tilt}°; heights stay true.`,
+      views: ["front", "top"],
+    },
+    {
+      title: "Top view + traces + dimensions",
+      how: `The top view shows the hinge line (diameter) plus the foreshortened arc. Add HT/VT and dimension the true ⌀${dia} mm — the arc's drawn width is shorter, the dimension is not.`,
+      views: ["top", "side", "front"],
+    },
+  ];
+}
+
+function rhombusGuide(s: BuiltSolid): GuideStep[] {
+  const d1 = s.parsed.dimensions.diag1 ?? 60;
+  const d2 = s.parsed.dimensions.diag2 ?? 40;
+  const tilt = s.parsed.inclinations.HP ?? 48.2;
+  return [
+    xyStep(),
+    {
+      title: `True rhombus: diagonals ${d1} × ${d2} mm`,
+      how: `Draw the rhombus flat with perpendicular diagonals PR = ${d1} mm and QS = ${d2} mm crossing at the center. Verify the crossing is 90° — that is the defining property.`,
+      views: ["top"],
+    },
+    {
+      title: `Tilt about QS until the plan reads square (${tilt}°)`,
+      how: `Hinge the rhombus about its short diagonal QS. PR foreshortens ${d1} → ${d1}·cos(${tilt}°) = ${d2} mm while QS keeps true length — so the top view becomes a ${d2} mm square. The tilt is solved, not guessed: cos t = ${d2}/${d1}.`,
+      views: ["top", "front"],
+    },
+    {
+      title: "Projectors + front heights + traces",
+      how: `Raise vertical projectors from every corner across XY and plot true heights (resting points land on XY). Draw HT/VT of the tilted plane, then the side view via horizontal projectors.`,
+      views: ["front", "top"],
+    },
+    {
+      title: "Dimensions: true diagonals",
+      how: `Dimension PR = ${d1} mm and QS = ${d2} mm true — the top view shows PR squeezed to ${d2} mm, the dimension still says ${d1} mm.`,
+      views: ["side", "front"],
     },
   ];
 }

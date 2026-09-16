@@ -1,5 +1,6 @@
 import type { BuiltSolid, ProjectionMethod } from "@/types";
 import { buildProjection } from "./projectionEngine";
+import { computeTraces } from "./tracesEngine";
 import { axisCenterLine, centerCrosses } from "./centerLineEngine";
 import { trueDims } from "./dimensionEngine";
 
@@ -111,6 +112,25 @@ export function buildDXF(solid: BuiltSolid, opts: DxfOptions): string {
     }
   };
 
+  // HT/VT traces for laminae, placed in the matching view frames
+  const traceSeg = (kind: "ht" | "vt", ox: number, oy: number): void => {
+    if (solid.kind !== "plane") return;
+    const tr = computeTraces(solid.axisDir, solid.baseCenter);
+    const tline = kind === "ht" ? tr.ht : tr.vt;
+    if (!tline) {
+      e += text(ox, oy - 12, 3.5, kind === "ht" ? "NO HT" : "NO VT", "TEXT");
+      return;
+    }
+    const q = kind === "ht" ? { x: tline.p.x, y: -tline.p.y } : { x: tline.p.x, y: tline.p.z };
+    const dd = kind === "ht" ? { x: tline.d.x, y: -tline.d.y } : { x: tline.d.x, y: tline.d.z };
+    const n = Math.hypot(dd.x, dd.y) || 1;
+    const ux = dd.x / n;
+    const uy = dd.y / n;
+    const R = 150;
+    e += line(q.x - ux * R + ox, q.y - uy * R + oy, q.x + ux * R + ox, q.y + uy * R + oy, "CONSTRUCTION", "DASHED");
+    e += text(q.x + ux * R + ox, q.y + uy * R + oy, 3.5, kind.toUpperCase(), "TEXT");
+  };
+
   if (method === "first") {
     // FRONT top, TOP below, SIDE left of front
     const colX = side.bounds.w + gapX;
@@ -126,6 +146,8 @@ export function buildDXF(solid: BuiltSolid, opts: DxfOptions): string {
       e += line(colX + x, oyF + front.bounds.minY - 4, colX + x, top.bounds.maxY + 4, "CONSTRUCTION", "DASHED");
     }
     dimBlock(colX + Math.max(front.bounds.w, top.bounds.w) + 12, oyF + front.bounds.maxY);
+    traceSeg("vt", colX, oyF);
+    traceSeg("ht", colX, 0);
   } else {
     // THIRD: TOP above, FRONT below, SIDE right of front
     const oyT = front.bounds.h + gap;
@@ -139,6 +161,8 @@ export function buildDXF(solid: BuiltSolid, opts: DxfOptions): string {
       e += line(x, front.bounds.maxY + 4, x, oyT + top.bounds.minY - 4, "CONSTRUCTION", "DASHED");
     }
     dimBlock(Math.max(front.bounds.w, top.bounds.w, side.bounds.w) + gapX + Math.max(front.bounds.w, top.bounds.w) + 12, front.bounds.maxY);
+    traceSeg("vt", 0, 0);
+    traceSeg("ht", 0, oyT);
   }
 
   // angle annotation from specified inclinations (geometry-verified elsewhere)

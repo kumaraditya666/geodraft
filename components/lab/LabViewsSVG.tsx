@@ -4,6 +4,7 @@ import type { MouseEvent as RMouseEvent, ReactNode } from "react";
 import type { BuiltSolid, ProjPoint2D, ProjectionMethod, ViewKind } from "@/types";
 import { buildProjection } from "@/lib/projection/projectionEngine";
 import { layoutViews, methodInfo } from "@/lib/projection/viewLayout";
+import { computeTraces } from "@/lib/projection/tracesEngine";
 import { axisCenterLine, centerCrosses, CENTER_DASH } from "@/lib/projection/centerLineEngine";
 import { measuredAngles, arcPoints } from "@/lib/projection/angleEngine";
 import { useStore } from "@/store/useStore";
@@ -83,6 +84,7 @@ export default function LabViewsSVG({
   const showCenter = useStore((s) => s.showCenterLines);
   const showDims = useStore((s) => s.showDims);
   const showProj = useStore((s) => s.showProjectors);
+  const showTraces = useStore((s) => s.showTraces);
   const showAngles = useStore((s) => s.showAngles);
   const method = useStore((s) => s.projectionMethod);
   const scale = useStore((s) => s.scale);
@@ -310,7 +312,62 @@ export default function LabViewsSVG({
     return `${Math.round(mm)} mm`;
   };
 
+  const traces = useMemo(
+    () => (solid.kind === "plane" ? computeTraces(solid.axisDir, solid.baseCenter) : { ht: null, vt: null }),
+    [solid]
+  );
   const projX = [front.bounds.minX, (front.bounds.minX + front.bounds.maxX) / 2, front.bounds.maxX];
+
+  const renderTraces = () => {
+    if (solid.kind !== "plane" || !showTraces) return null;
+    const px = L.s * k; // mm -> px
+    const out: ReactNode[] = [];
+    if (showT) {
+      if (traces.ht) {
+        const bx = TX(traces.ht.p.x);
+        const by = TY(-traces.ht.p.y);
+        const dl = Math.hypot(traces.ht.d.x, traces.ht.d.y) || 1;
+        const ux = traces.ht.d.x / dl;
+        const uy = -traces.ht.d.y / dl;
+        const half = (top.bounds.w * px) / 2 + 34;
+        out.push(
+          <g key="ht">
+            <line x1={bx - ux * half} y1={by - uy * half} x2={bx + ux * half} y2={by + uy * half} stroke={P.xy} strokeWidth={1.4} strokeDasharray="14 5 3 5" opacity={0.85} />
+            <text x={bx + ux * half + 6} y={by + uy * half} fill={P.xy} fontSize={12} fontWeight={700} fontFamily="JetBrains Mono, monospace">HT</text>
+          </g>
+        );
+      } else {
+        out.push(
+          <text key="noht" x={TX(top.bounds.minX)} y={TY(top.bounds.maxY) + 42} fill={P.text} fontSize={11} fontFamily="JetBrains Mono, monospace">
+            No HT — plane parallel to HP
+          </text>
+        );
+      }
+    }
+    if (showF) {
+      if (traces.vt) {
+        const bx = FX(traces.vt.p.x);
+        const by = FY(traces.vt.p.z);
+        const dl = Math.hypot(traces.vt.d.x, traces.vt.d.z) || 1;
+        const ux = traces.vt.d.x / dl;
+        const uy = traces.vt.d.z / dl;
+        const half = (front.bounds.w * px) / 2 + 34;
+        out.push(
+          <g key="vt">
+            <line x1={bx - ux * half} y1={by - uy * half} x2={bx + ux * half} y2={by + uy * half} stroke={P.xy} strokeWidth={1.4} strokeDasharray="14 5 3 5" opacity={0.85} />
+            <text x={bx + ux * half + 6} y={by + uy * half} fill={P.xy} fontSize={12} fontWeight={700} fontFamily="JetBrains Mono, monospace">VT</text>
+          </g>
+        );
+      } else {
+        out.push(
+          <text key="novt" x={FX(front.bounds.minX)} y={FY(front.bounds.minY) - 28} fill={P.text} fontSize={11} fontFamily="JetBrains Mono, monospace">
+            No VT — plane parallel to VP
+          </text>
+        );
+      }
+    }
+    return <g>{out}</g>;
+  };
   const showSingle = focus !== undefined && focus !== "all";
   const showF = !showSingle || focus === "front";
   const showT = !showSingle || focus === "top";
@@ -372,6 +429,8 @@ export default function LabViewsSVG({
             </text>
           </g>
         )}
+
+        {reveal >= 2 && renderTraces()}
 
         {reveal >= 2 && showProj && !showSingle && (
           <g>
