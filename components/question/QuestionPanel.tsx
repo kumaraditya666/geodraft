@@ -42,6 +42,22 @@ export default function QuestionPanel() {
     setEditing(false);
   };
 
+  // bare angle with no reference, e.g. "inclined 30 degrees" — ask, don't guess
+  const angleAsk = parsed.unclear
+    .map((u) => u.match(/^Angle ([\d.]+)° — with HP or VP\?$/))
+    .find(Boolean);
+  const applyAngleRef = (ref: "HP" | "VP") => {
+    if (!angleAsk) return;
+    const val = parseFloat(angleAsk[1]);
+    const next: ParsedQuestion = {
+      ...parsed,
+      inclinations: { ...parsed.inclinations, [ref]: val },
+      unclear: parsed.unclear.filter((u) => u !== angleAsk[0]),
+      understood: [...parsed.understood, { label: `Angle with ${ref}: ${val}°`, ok: true }],
+    };
+    applyParsed(next);
+  };
+
   return (
     <div className="glass flex h-full flex-col rounded-2xl p-4">
       <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">Question</div>
@@ -60,6 +76,17 @@ export default function QuestionPanel() {
           <button onClick={confirmAnyway} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-300 px-3 py-1.5 text-[12px] font-bold text-slate-950">
             <Check size={13} /> Confirm & continue anyway
           </button>
+        </div>
+      )}
+
+      {angleAsk && (
+        <div className="mt-3 rounded-xl border border-fuchsia-300/30 bg-fuchsia-300/10 p-3">
+          <div className="text-sm font-semibold text-fuchsia-200">{angleAsk[1]}° with which reference?</div>
+          <p className="mt-0.5 text-[12px] text-fuchsia-100/70">The question gives an angle but not what it is measured against. Pick one — nothing is assumed.</p>
+          <div className="mt-2 flex gap-2">
+            <button onClick={() => applyAngleRef("HP")} className="flex-1 rounded-lg bg-fuchsia-300 px-3 py-1.5 text-[12px] font-bold text-slate-950">HP</button>
+            <button onClick={() => applyAngleRef("VP")} className="flex-1 rounded-lg bg-fuchsia-300 px-3 py-1.5 text-[12px] font-bold text-slate-950">VP</button>
+          </div>
         </div>
       )}
 

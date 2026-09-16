@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useStore } from "@/store/useStore";
 import type { BuiltSolid, Vec3 } from "@/types";
+import { measuredAngles } from "@/lib/projection/angleEngine";
 
 const K = 0.045; // mm -> scene units
 
@@ -198,7 +199,7 @@ function Overlays({ solid }: { solid: BuiltSolid }) {
 
       {/* dimensions: height line */}
       <HeightDimension solid={solid} />
-      <AngleIndicator solid={solid} />
+      <AngleGizmo solid={solid} />
     </group>
   );
 }
@@ -223,29 +224,100 @@ function HeightDimension({ solid }: { solid: BuiltSolid }) {
   );
 }
 
-function AngleIndicator({ solid }: { solid: BuiltSolid }) {
-  const vpAngle = solid.parsed.inclinations.VP;
-  if (vpAngle === undefined) return null;
-  // arc on HP showing axis azimuth from X axis
+/**
+ * Engineering angle gizmo. All arcs/labels are MEASURED from the true 3D
+ * axis direction (asin of components) — the specified question values are
+ * shown alongside for comparison, never as the source of truth.
+ */
+function AngleGizmo({ solid }: { solid: BuiltSolid }) {
+  const showAngles = useStore((s) => s.showAngles);
+  const inc = solid.parsed.inclinations;
+  const hasInc = inc.HP !== undefined || inc.VP !== undefined;
+  if (!showAngles || !hasInc) return null;
+
+  const m = measuredAngles(solid.axisDir);
+  const tip = solid.apex ?? solid.topCenter ?? solid.vertices[1]?.p ?? solid.baseCenter;
   const c = engToScene(solid.baseCenter);
-  const r = 0.9;
-  const az = Math.atan2(solid.axisDir.y, solid.axisDir.x);
-  const N = 24;
-  const pts: [number, number, number][] = [];
-  for (let i = 0; i <= N; i++) {
-    const t = (i / N) * az;
-    pts.push([c[0] + Math.cos(t) * r, 0.02, c[2] + Math.sin(t) * r]);
+  const t3 = engToScene(tip);
+  const r = 1.05;
+  const N = 26;
+
+  // plane lamina: show surface-normal + measured surface tilt (90° − normal↔HP)
+  if (solid.kind === "plane") {
+    const surfTilt = 90 - m.withHP;
+    return (
+      <group>
+        <Line points={[c, t3]} color="#fbbf24" lineWidth={2.4} />
+        <Html position={[(c[0] + t3[0]) / 2, (c[1] + t3[1]) / 2 + 0.25, (c[2] + t3[2]) / 2]} center distanceFactor={10}>
+          <div className="whitespace-nowrap rounded bg-amber-300 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-950">
+            surface {surfTilt.toFixed(1)}° to HP (measured)
+          </div>
+        </Html>
+      </group>
+    );
   }
-  const end: [number, number, number] = [c[0] + Math.cos(az) * (r + 0.55), 0.02, c[2] + Math.sin(az) * (r + 0.55)];
-  const start: [number, number, number] = [c[0] + r + 0.55, 0.02, c[2]];
+
+  const ax = solid.axisDir.x;
+  const ay = solid.axisDir.y;
+  const az = solid.axisDir.z;
+  const gLen = Math.hypot(ax, ay);
+  const azim = Math.atan2(ay, ax);
+  const showVP = inc.VP !== undefined && gLen > 1e-6;
+  const showHP = inc.HP !== undefined && gLen > 1e-6;
+
+  // VP arc on the HP plane: +X reference → ground projection of axis
+  const vpPts: [number, number, number][] = [];
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * azim;
+    vpPts.push([c[0] + Math.cos(a) * r, 0.03, c[2] + Math.sin(a) * r]);
+  }
+  const vpEnd: [number, number, number] = [c[0] + Math.cos(azim) * (r + 0.6), 0.03, c[2] + Math.sin(azim) * (r + 0.6)];
+  const vpRef: [number, number, number] = [c[0] + r + 0.6, 0.03, c[2]];
+
+  // HP arc in the vertical plane of the axis: ground projection → axis
+  const el = (m.withHP * Math.PI) / 180;
+  const gx = Math.cos(azim);
+  const gz = Math.sin(azim);
+  const hpPts: [number, number, number][] = [];
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * el;
+    hpPts.push([c[0] + (Math.cos(a) * gx) * r, Math.sin(a) * r + 0.03, c[2] + (Math.cos(a) * gz) * r]);
+  }
+
   return (
     <group>
-      <Line points={[[c[0], 0.02, c[2]], start]} color="#64748b" lineWidth={1} transparent opacity={0.7} />
-      <Line points={[[c[0], 0.02, c[2]], end]} color="#f472b6" lineWidth={1.4} />
-      <Line points={pts} color="#f472b6" lineWidth={1.4} />
-      <Html position={[c[0] + Math.cos(az / 2) * (r + 0.35), 0.1, c[2] + Math.sin(az / 2) * (r + 0.35)]} center distanceFactor={10}>
-        <div className="rounded bg-pink-400 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-950">{vpAngle}°</div>
-      </Html>
+      {/* highlighted axis */}
+      <Line points={[c, t3]} color="#fbbf24" lineWidth={2.6} />
+      {/* HP reference stub */}
+      <Line points={[[c[0], 0.03, c[2]], vpRef]} color="#64748b" lineWidth={1.2} transparent opacity={0.8} />
+      {showVP && (
+        <group>
+          <Line points={[[c[0], 0.03, c[2]], vpEnd]} color="#f472b6" lineWidth={1.6} />
+          <Line points={vpPts} color="#f472b6" lineWidth={1.8} />
+          <Html position={[c[0] + Math.cos(azim / 2) * (r + 0.42), 0.14, c[2] + Math.sin(azim / 2) * (r + 0.42)]} center distanceFactor={10}>
+            <div className="whitespace-nowrap rounded bg-pink-400 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-950">
+              {m.withVP.toFixed(1)}° VP (spec {inc.VP}°)
+            </div>
+          </Html>
+        </group>
+      )}
+      {showHP && (
+        <group>
+          <Line points={hpPts} color="#4ade80" lineWidth={1.8} />
+          <Html
+            position={[
+              c[0] + Math.cos(el / 2) * gx * (r + 0.45),
+              Math.sin(el / 2) * (r + 0.45) + 0.1,
+              c[2] + Math.cos(el / 2) * gz * (r + 0.45),
+            ]}
+            center distanceFactor={10}
+          >
+            <div className="whitespace-nowrap rounded bg-green-400 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-950">
+              {m.withHP.toFixed(1)}° HP (spec {inc.HP}°)
+            </div>
+          </Html>
+        </group>
+      )}
     </group>
   );
 }

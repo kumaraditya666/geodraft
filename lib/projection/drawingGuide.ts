@@ -261,6 +261,7 @@ function lineGuide(s: BuiltSolid): GuideStep[] {
 }
 
 function planeGuide(s: BuiltSolid): GuideStep[] {
+  if (s.parsed.planeMode === "diagonal") return diagonalLaminaGuide(s);
   const tilt = s.parsed.inclinations.HP ?? 30;
   const shape = s.parsed.planeShape ?? "rectangular";
   const w = t(s.parsed.dimensions.width ?? s.parsed.dimensions.side ?? 60);
@@ -286,6 +287,48 @@ function planeGuide(s: BuiltSolid): GuideStep[] {
       title: "Side view + true-size dimensions",
       how: `Horizontal projectors give the narrow side strip. Dimension the TRUE ${w} × ${l} mm and the ${tilt}° surface tilt — dimensions always quote the flat lamina, not its squashed projection.`,
       views: ["side", "front"],
+    },
+  ];
+}
+
+function diagonalLaminaGuide(s: BuiltSolid): GuideStep[] {
+  const side = t(s.parsed.dimensions.side ?? 30);
+  const tilt = s.parsed.inclinations.HP ?? 45;
+  const yaw = s.parsed.diagonalAngleVP ?? s.parsed.inclinations.VP ?? 0;
+  const dist = s.parsed.dimensions.distVP;
+  return [
+    xyStep(),
+    {
+      title: `Top view: diagonal DB at ${yaw}° to VP`,
+      how: `Below XY, draw the diagonal DB as a line tilted ${yaw}° from the X direction — a horizontal line's angle to VP is just its plan angle. Mark D toward the front (larger Y) and B behind. True diagonal length = ${side}√2 ≈ ${t(Number(side) * 1.414)} mm.`,
+      views: ["top"],
+      pointId: "corner-d",
+    },
+    {
+      title: `Corner C on HP, surface ${tilt}° up`,
+      how: `The square is hinged about DB: corner C dips to touch HP exactly on the XY level in front view, while A rises. In plan, C sits off the DB line by (diagonal/2)·cos(${tilt}°) perpendicular to it. That single rotation about DB creates the whole ${tilt}° surface tilt.`,
+      views: ["top", "front"],
+      pointId: "corner-c",
+    },
+    {
+      title: "Raise one projector per corner",
+      how: `From A, B, C, D in the top view, draw vertical projectors up across XY. C's projector meets the XY level itself (C rests on HP); B and D land at the diagonal's height; A lands highest.`,
+      views: ["front", "top"],
+      pointId: "corner-a",
+    },
+    {
+      title: "Front view: plot true heights",
+      how: `On each projector mark the corner's true Z: C on XY, B and D level with each other (DB is horizontal — that is the check), A at the top. Join A-B-C-D in order; the edge facing away goes dashed.`,
+      views: ["front"],
+      pointId: "corner-b",
+    },
+    {
+      title: `Side view${dist !== undefined ? ` — D ${dist} mm from VP` : " + finish"}`,
+      how: dist !== undefined
+        ? `Shift the whole lamina in depth until D sits ${dist} mm in front of VP (horizontal projectors carry every corner sideways by the same amount). Complete the side outline, then dimension side ${side} mm, tilt ${tilt}°, DB ${yaw}° to VP.`
+        : `Horizontal projectors build the narrow side strip. Dimension side ${side} mm, tilt ${tilt}°, DB ${yaw}° to VP — all true sizes.`,
+      views: ["side", "front"],
+      pointId: "corner-d",
     },
   ];
 }

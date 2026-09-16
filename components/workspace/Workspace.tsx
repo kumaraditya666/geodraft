@@ -16,6 +16,7 @@ import StepsBar from "@/components/steps/StepsBar";
 import DrawingSheet from "@/components/sheet/DrawingSheet";
 import ProjectionLab from "@/components/lab/ProjectionLab";
 import Footer from "@/components/ui/Footer";
+import LabViewsSVG from "@/components/lab/LabViewsSVG";
 
 const Viewer3D = dynamic(() => import("@/components/viewer3d/Viewer3D"), { ssr: false });
 
@@ -30,6 +31,8 @@ export default function Workspace() {
   const question = useStore((s) => s.question);
   const showLabels = useStore((s) => s.showLabels);
   const showRays = useStore((s) => s.showRays);
+  const showAngles = useStore((s) => s.showAngles);
+  const centerMode = useStore((s) => s.centerMode);
   const showHP = useStore((s) => s.showHP);
   const showVP = useStore((s) => s.showVP);
   const splitMode = useStore((s) => s.splitMode);
@@ -143,19 +146,39 @@ export default function Workspace() {
               {/* center */}
               <div className="flex min-h-[420px] flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <CameraBar />
+                  <div className="flex rounded-lg border border-white/10 p-0.5">
+                    {(["3d", "2d"] as const).map((mm) => (
+                      <button
+                        key={mm}
+                        onClick={() => set({ centerMode: mm })}
+                        className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-bold uppercase ${centerMode === mm ? "bg-cyan-400 text-slate-950" : "text-slate-400"}`}
+                      >
+                        {mm === "3d" ? "3D Model" : "2D Projection"}
+                      </button>
+                    ))}
+                  </div>
+                  {centerMode === "3d" && <CameraBar />}
                   <div className="ml-auto flex flex-wrap items-center gap-1.5 text-[11px]">
                     <Toggle on={showHP} label="HP" onClick={() => set({ showHP: !showHP })} />
                     <Toggle on={showVP} label="VP" onClick={() => set({ showVP: !showVP })} />
                     <Toggle on={showLabels} label="Labels" icon={<Tag size={11} />} onClick={() => set({ showLabels: !showLabels })} />
                     <Toggle on={showRays} label="Rays" icon={<Eye size={11} />} onClick={() => set({ showRays: !showRays })} />
+                    <Toggle on={showAngles} label="Angles" onClick={() => set({ showAngles: !showAngles })} />
                     <Toggle on={splitMode} label="3D↔2D" icon={<SplitSquareHorizontal size={11} />} onClick={() => set({ splitMode: !splitMode })} />
                   </div>
                 </div>
-                <div className="min-h-[380px] flex-1"><Viewer3D /></div>
+                <div className="min-h-[380px] flex-1">
+                  {centerMode === "3d" ? (
+                    <Viewer3D />
+                  ) : solid ? (
+                    <div className="h-full w-full overflow-hidden rounded-2xl border-2 border-slate-700">
+                      <LabViewsSVG solid={solid} reveal={5} activePointId={selectedPoint} animateProjectors={false} sweeping={false} sheet />
+                    </div>
+                  ) : null}
+                </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-slate-400">
                   <span className="font-mono">SCALE</span>
-                  {(["1:1", "1:2", "1:5", "2:1"] as const).map((sc) => (
+                  {(["1:1", "1:2", "1:5", "1:10", "2:1"] as const).map((sc) => (
                     <button key={sc} onClick={() => set({ scale: sc })} className={`rounded-md px-2 py-1 font-mono ${scale === sc ? "bg-white text-slate-950" : "border border-white/10"}`}>{sc}</button>
                   ))}
                   <span className="ml-2 font-mono">UNIT</span>
@@ -245,7 +268,7 @@ export default function Workspace() {
             <h2 className="font-display text-xl font-bold">Settings</h2>
             <div className="glass mt-4 space-y-3 rounded-2xl p-5 text-sm">
               <Row label="Display unit" value={unit} opts={["mm", "cm", "m"]} onPick={(v) => set({ unit: v as "mm" | "cm" | "m" })} />
-              <Row label="Drawing scale" value={scale} opts={["1:1", "1:2", "1:5", "2:1"]} onPick={(v) => set({ scale: v as "1:1" | "1:2" | "1:5" | "2:1" })} />
+              <Row label="Drawing scale" value={scale} opts={["1:1", "1:2", "1:5", "1:10", "2:1"]} onPick={(v) => set({ scale: v as "1:1" | "1:2" | "1:5" | "1:10" | "2:1" })} />
             </div>
           </div>
         )}

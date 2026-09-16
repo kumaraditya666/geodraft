@@ -4,7 +4,7 @@ import type { BuiltSolid, ViewKind } from "@/types";
 import { buildProjection } from "@/lib/projection/orthographic";
 import { useStore } from "@/store/useStore";
 
-const SCALE_MAP: Record<string, number> = { "1:1": 1, "1:2": 0.5, "1:5": 0.2, "2:1": 2 };
+const SCALE_MAP: Record<string, number> = { "1:1": 1, "1:2": 0.5, "1:5": 0.2, "1:10": 0.1, "2:1": 2 };
 
 function DimArrow({ x1, y1, x2, y2, label, vertical }: { x1: number; y1: number; x2: number; y2: number; label: string; vertical?: boolean }) {
   return (
@@ -42,6 +42,9 @@ export default function ProjectionSVG({
   compact?: boolean;
 }) {
   const showLabels = useStore((s) => s.showLabels);
+  const showHidden = useStore((s) => s.showHiddenLines);
+  const showCenter = useStore((s) => s.showCenterLines);
+  const showAngles = useStore((s) => s.showAngles);
   const selectedPoint = useStore((s) => s.selectedPoint);
   const set = useStore((s) => s.set);
   const scale = useStore((s) => s.scale);
@@ -113,7 +116,7 @@ export default function ProjectionSVG({
       )}
 
       {/* center / axis line */}
-      {solid.kind !== "line" && (
+      {solid.kind !== "line" && showCenter && (
         <line
           x1={axis2D.pa.x}
           y1={axis2D.pa.y}
@@ -127,7 +130,7 @@ export default function ProjectionSVG({
       )}
 
       {/* geometry */}
-      {proj.segments.map((sg) => (
+      {proj.segments.filter((sg) => sg.visible || showHidden).map((sg) => (
         <line
           key={sg.id}
           x1={X(sg.a.x)}
@@ -191,7 +194,7 @@ export default function ProjectionSVG({
             label={dimLabel(heightMM)}
             vertical
           />
-          {(solid.parsed.inclinations.VP !== undefined || solid.parsed.inclinations.HP !== undefined) && (
+          {(solid.parsed.inclinations.VP !== undefined || solid.parsed.inclinations.HP !== undefined) && showAngles && (
             <text x={14} y={H - 12} fill="#f9a8d4" fontSize={11} fontFamily="JetBrains Mono, monospace" fontWeight={700}>
               {solid.parsed.inclinations.HP !== undefined ? `${solid.parsed.inclinations.HP}° HP ` : ""}
               {solid.parsed.inclinations.VP !== undefined ? `${solid.parsed.inclinations.VP}° VP` : ""}

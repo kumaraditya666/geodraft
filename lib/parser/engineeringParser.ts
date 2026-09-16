@@ -1,15 +1,27 @@
 import type { ParsedQuestion, RestingPlane, SolidKind } from "@/types";
 
 const SOLID_PATTERNS: { kind: SolidKind; re: RegExp }[] = [
+  // order matters: frustum contains "cone", hemisphere contains "sphere",
+  // and "lamina/plane" must beat generic "line" (e.g. "...to the xy line")
+  { kind: "frustum", re: /\bfrustum\b|\btruncated\b/i },
+  { kind: "hemisphere", re: /\bhemisphere\b/i },
+  { kind: "tetrahedron", re: /\btetrahedron\b|\btetrahedral\b/i },
   { kind: "cone", re: /\bcone\b/i },
   { kind: "cylinder", re: /\bcylinder\b/i },
   { kind: "prism", re: /\bprism\b/i },
   { kind: "pyramid", re: /\bpyramid\b/i },
-  { kind: "line", re: /\bline\b/i },
-  { kind: "plane", re: /\blamina\b|\bplane\b|\bplate\b|\bsheet\b/i },
-  { kind: "box", re: /\bbox\b|\bcube\b|\bblock\b/i },
+  { kind: "plane", re: /\blamina\b|\bplate\b|\bsheet\b|\bplane\b/i },
+  { kind: "line", re: /\bline\b|\bline AB\b/i },
+  { kind: "box", re: /\bbox\b|\bcube\b|\bcuboid\b|\bblock\b/i },
   { kind: "sphere", re: /\bsphere\b/i },
 ];
+
+/** Normalize dotted surveyed abbreviations: "H.P." -> "HP", "V.P." -> "VP". */
+function normalizeRefs(s: string): string {
+  return s
+    .replace(/\bh\s*\.\s*p\s*\./gi, "HP")
+    .replace(/\bv\s*\.\s*p\s*\./gi, "VP");
+}
 
 function toMM(value: number, unit: string): number {
   const u = unit.toLowerCase();
@@ -20,7 +32,7 @@ function toMM(value: number, unit: string): number {
 }
 
 export function parseEngineeringQuestion(question: string): ParsedQuestion {
-  const q = question;
+  const q = normalizeRefs(question);
   const lower = q.toLowerCase();
   const unclear: string[] = [];
   const understood: ParsedQuestion["understood"] = [];
@@ -84,20 +96,41 @@ export function parseEngineeringQuestion(question: string): ParsedQuestion {
     if (key === "r") key = "radius";
     dimensions[key] = toMM(val, m[2] ?? "mm");
   }
-  // "base diameter 50", "base edge 40"
+  // "base diameter 50", "base edge 40", frustum "bottom/top diameter"
   const baseRe = /base\s+(diameter|edge|side)\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/gi;
   while ((m = baseRe.exec(q)) !== null) {
     dimensions[m[1].toLowerCase()] = toMM(parseFloat(m[2]), m[3] ?? "mm");
+  }
+  const endRe = /(bottom|top)\s+(diameter|dia|radius)\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/gi;
+  while ((m = endRe.exec(q)) !== null) {
+    const which = m[1].toLowerCase();
+    let key = m[2].toLowerCase();
+    if (key === "dia") key = "diameter";
+    const mm = toMM(parseFloat(m[3]), m[4] ?? "mm");
+    if (m[4]) unit = m[4].toLowerCase() as ParsedQuestion["unit"];
+    if (key === "radius") {
+      if (which === "top") dimensions.topDiameter = mm * 2;
+      else dimensions.diameter = mm * 2;
+    } else {
+      if (which === "top") dimensions.topDiameter = mm;
+      else dimensions.diameter = mm;
+    }
+  }
+  if (solid === "frustum" && dimensions.diameter !== undefined && dimensions.topDiameter === undefined && dimensions.topRadius === undefined) {
+    dimensions.topDiameter = Math.round(dimensions.diameter * 0.5 * 10) / 10;
+    unclear.push("Top diameter assumed 50% of base — confirm");
+    understood.push({ label: `Top diameter: ${fmtDim(dimensions.topDiameter, unit)} (assumed)`, ok: false });
   }
 
   const dimLabels: Record<string, string> = {
     diameter: "Diameter", radius: "Radius", height: "Height", length: "Length",
     width: "Width", side: "Side", thickness: "Thickness", base: "Base",
+    topDiameter: "Top diameter", distVP: "D from VP",
   };
   for (const [k, v] of Object.entries(dimensions)) {
     understood.push({ label: `${dimLabels[k] ?? k}: ${fmtDim(v, unit)}`, ok: true });
   }
-  if (solid === "cone" || solid === "cylinder") {
+  if (solid === "cone" || solid === "cylinder" || solid === "frustum") {
     if (dimensions.diameter === undefined && dimensions.radius === undefined) {
       unclear.push("Base diameter/radius");
       understood.push({ label: "Diameter: missing", ok: false });
@@ -106,6 +139,14 @@ export function parseEngineeringQuestion(question: string): ParsedQuestion {
       unclear.push("Height");
       understood.push({ label: "Height: missing", ok: false });
     }
+  }
+  if (solid === "tetrahedron" && dimensions.side === undefined && dimensions.edge === undefined) {
+    unclear.push("Edge length (side)");
+    understood.push({ label: "Side: missing", ok: false });
+  }
+  if (solid === "hemisphere" && dimensions.diameter === undefined && dimensions.radius === undefined) {
+    unclear.push("Diameter/radius");
+    understood.push({ label: "Diameter: missing", ok: false });
   }
 
   // resting plane
@@ -123,24 +164,79 @@ export function parseEngineeringQuestion(question: string): ParsedQuestion {
   }
   understood.push({ label: `Resting plane: ${restingPlane ?? "?"}`, ok: restingPlane !== null });
 
-  // inclinations
+  // inclinations — allow "to the VP" / "with the HP" phrasing
   const inclinations: ParsedQuestion["inclinations"] = {};
-  const angRe = /(?:axis|line|plane|surface|base)?\s*(?:makes|make|inclined|incline|inclination|at)\s*(?:an?\s*)?(?:angle\s*(?:of\s*)?)?(\d+(?:\.\d+)?)\s*(?:°|deg(?:rees?)?)\s*(?:with|to|from|w\.?r\.?t\.?)\s*(hp|vp|horizontal|vertical|xy)/gi;
+  const angRe = /(?:axis|line|plane|surface|base|diagonal)?\s*(?:makes|make|inclined|incline|inclination|at)\s*(?:an?\s*)?(?:angle\s*(?:of\s*)?)?(\d+(?:\.\d+)?)\s*(?:°|deg(?:rees?)?)\s*(?:with|to|from|w\.?r\.?t\.?)(?:\s+the)?\s*(hp|vp|horizontal|vertical|xy)/gi;
   while ((m = angRe.exec(q)) !== null) {
     const val = parseFloat(m[1]);
     const plane = m[2].toLowerCase();
     if (plane.startsWith("h")) inclinations.HP = val;
     else if (plane.startsWith("v")) inclinations.VP = val;
   }
-  // "30° with VP" fallback
-  const shortRe = /(\d+(?:\.\d+)?)\s*°\s*(?:with|to)\s*(hp|vp)/gi;
+  // "30° with VP" fallback (also "30° to the VP")
+  const shortRe = /(\d+(?:\.\d+)?)\s*°\s*(?:with|to)(?:\s+the)?\s*(hp|vp)/gi;
   while ((m = shortRe.exec(q)) !== null) {
     const val = parseFloat(m[1]);
     if (m[2].toLowerCase() === "hp" && inclinations.HP === undefined) inclinations.HP = val;
     if (m[2].toLowerCase() === "vp" && inclinations.VP === undefined) inclinations.VP = val;
   }
+  // "N° to the XY line" for a lamina: read as surface tilt to HP, but flag it
+  let xyAngle: number | undefined;
+  const xyRe = /(\d+(?:\.\d+)?)\s*(?:°|degrees?)\s*(?:to|with|from)(?:\s+the)?\s*xy\b/gi;
+  let xm: RegExpExecArray | null;
+  while ((xm = xyRe.exec(q)) !== null) xyAngle = parseFloat(xm[1]);
+  if (xyAngle !== undefined && solid === "plane" && inclinations.HP === undefined) {
+    inclinations.HP = xyAngle;
+    unclear.push(`${xyAngle}° to XY read as surface tilt to HP — confirm`);
+    understood.push({ label: `Surface tilt: ${xyAngle}° to HP (from XY, confirm)`, ok: false });
+  }
+  // bare angle with no reference, e.g. "inclined 30 degrees" — do NOT guess, ask
+  if (inclinations.HP === undefined && inclinations.VP === undefined) {
+    const consumed = new Set<number>(
+      [inclinations.HP, inclinations.VP, xyAngle].filter((v): v is number => v !== undefined)
+    );
+    const loose: number[] = [];
+    const degRe = /(\d+(?:\.\d+)?)\s*(?:°|degrees?)\b/gi;
+    let d: RegExpExecArray | null;
+    while ((d = degRe.exec(q)) !== null) {
+      const ctx = q.slice(Math.max(0, d.index - 18), d.index + d[0].length + 18).toLowerCase();
+      const val = parseFloat(d[1]);
+      if (!/(hp|vp|horizontal|vertical|xy)/.test(ctx) && !consumed.has(val)) loose.push(val);
+    }
+    if (loose.length > 0 && (solid === "cone" || solid === "cylinder" || solid === "frustum" || solid === "prism" || solid === "pyramid" || solid === "line" || solid === "plane")) {
+      unclear.push(`Angle ${loose[0]}° — with HP or VP?`);
+      understood.push({ label: `Angle ${loose[0]}°: reference missing`, ok: false });
+    }
+  }
   if (inclinations.HP !== undefined) understood.push({ label: `Angle with HP: ${inclinations.HP}°`, ok: true });
   if (inclinations.VP !== undefined) understood.push({ label: `Angle with VP: ${inclinations.VP}°`, ok: true });
+  // diagonal-resting lamina: "diagonal DB is parallel to HP and inclined at 30° to VP"
+  let planeMode: ParsedQuestion["planeMode"];
+  let diagonalAngleVP: number | undefined;
+  if (solid === "plane" && /diagonal/i.test(q)) {
+    planeMode = "diagonal";
+    const dm = q.match(/diagonal[^.?!]*?(\d+(?:\.\d+)?)\s*(?:°|degrees?)[^.?!]*?vp/i);
+    if (dm) {
+      diagonalAngleVP = parseFloat(dm[1]);
+      understood.push({ label: `Diagonal–VP angle: ${diagonalAngleVP}°`, ok: true });
+    } else if (inclinations.VP !== undefined) {
+      diagonalAngleVP = inclinations.VP;
+      understood.push({ label: `Diagonal–VP angle: ${diagonalAngleVP}° (from axis angle)`, ok: true });
+    } else {
+      unclear.push("Diagonal angle with VP missing");
+      understood.push({ label: "Diagonal–VP angle: missing", ok: false });
+    }
+    if (inclinations.HP === undefined) {
+      unclear.push("Surface tilt (HP) missing");
+      understood.push({ label: "Surface tilt: missing", ok: false });
+    }
+  }
+  // "15 mm in front of VP/it" — offset distance from VP
+  const distM = q.match(/(\d+(?:\.\d+)?)\s*mm\s+in\s*front\s*of\s+(?:the\s+)?(?:vp|it|them)/i);
+  if (distM && solid === "plane") {
+    dimensions.distVP = parseFloat(distM[1]);
+    understood.push({ label: `D corner ${dimensions.distVP} mm from VP`, ok: true });
+  }
   if (inclinations.HP === undefined && inclinations.VP === undefined) {
     if (solid === "line") {
       unclear.push("Inclination angles");
@@ -153,6 +249,7 @@ export function parseEngineeringQuestion(question: string): ParsedQuestion {
 
   return {
     solid, dimensions, unit, restingPlane, inclinations, sides, planeShape,
+    planeMode, diagonalAngleVP,
     raw: question, confidence: Math.min(98, Math.max(20, confidence)), unclear, understood,
   };
 }

@@ -1,22 +1,45 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Pause, Play, Sparkles } from "lucide-react";
+import {
+  ChevronLeft, ChevronRight, Pause, Play, Sparkles,
+  CheckCircle2, AlertTriangle, Download, Printer, ClipboardCheck, Boxes,
+} from "lucide-react";
 import { useStore } from "@/store/useStore";
+import type { Scale } from "@/store/useStore";
+import type { ProjectionMethod, ViewKind } from "@/types";
 import { buildDrawingGuide } from "@/lib/projection/drawingGuide";
+import { methodInfo } from "@/lib/projection/viewLayout";
+import { buildDXF } from "@/lib/projection/dxfExporter";
+import { downloadSVG, downloadText, printSheet } from "@/lib/projection/svgExporter";
+import { runAccuracyChecks, checkDrawing } from "@/lib/verify/accuracy";
 import LabViewsSVG from "./LabViewsSVG";
+
+type Focus = "all" | ViewKind;
 
 export default function ProjectionLab() {
   const solid = useStore((s) => s.solid);
   const selectedPoint = useStore((s) => s.selectedPoint);
   const loadExample = useStore((s) => s.loadExample);
   const set = useStore((s) => s.set);
+  const method = useStore((s) => s.projectionMethod);
+  const unit = useStore((s) => s.unit);
+  const scale = useStore((s) => s.scale);
+  const showHidden = useStore((s) => s.showHiddenLines);
+  const showCenter = useStore((s) => s.showCenterLines);
+  const showDims = useStore((s) => s.showDims);
+  const showProj = useStore((s) => s.showProjectors);
+  const showAngles = useStore((s) => s.showAngles);
+  const showLabels = useStore((s) => s.showLabels);
 
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [animate, setAnimate] = useState(true);
+  const [focus, setFocus] = useState<Focus>("all");
+  const [checking, setChecking] = useState(false);
 
   const steps = useMemo(() => (solid ? buildDrawingGuide(solid) : []), [solid]);
+  const mi = methodInfo(method as ProjectionMethod);
 
   useEffect(() => {
     setIdx(0);
@@ -32,6 +55,15 @@ export default function ProjectionLab() {
     }, 4200);
     return () => clearInterval(timer);
   }, [playing, idx, steps.length]);
+
+  const acc = useMemo(() => (solid ? runAccuracyChecks(solid) : []), [solid]);
+  const draw = useMemo(
+    () =>
+      solid
+        ? checkDrawing(solid, { method: method as ProjectionMethod, showHidden, showCenter, showDims, showAngles })
+        : [],
+    [solid, method, showHidden, showCenter, showDims, showAngles]
+  );
 
   if (!solid || steps.length === 0) {
     return (
@@ -52,23 +84,100 @@ export default function ProjectionLab() {
   const reveal = Math.min(5, Math.floor(((Math.min(idx, steps.length - 1) + 1) / steps.length) * 6));
   const activePoint = step.pointId ?? selectedPoint;
 
+  const exportDXF = () => {
+    const dxf = buildDXF(solid, { method: method as ProjectionMethod, unit });
+    downloadText(`geodraft-${solid.kind}-${method}-angle-mm.dxf`, dxf, "application/dxf");
+  };
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div>
-          <div className="font-display text-lg font-bold">
-            Projection Lab <span className="text-cyan-300">— how projectors draw the views</span>
+      {/* workstation toolbar */}
+      <div className="glass rounded-2xl p-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px]">
+          <div className="font-display text-[15px] font-bold">
+            Projection Lab <span className="font-mono text-[10px] font-normal text-slate-500">{mi.title}</span>
           </div>
-          <div className="font-mono text-[11px] text-slate-500">
-            {solid.kind.toUpperCase()} • cyan = vertical front↔top projectors (shared X) • pink = horizontal front↔side (shared Z) • gold = active point
+          <label className="flex items-center gap-1.5 text-slate-400">
+            <span className="font-mono text-[10px] uppercase">Method</span>
+            {(["first", "third"] as ProjectionMethod[]).map((mm) => (
+              <button key={mm} onClick={() => set({ projectionMethod: mm })} className={`rounded-lg px-2.5 py-1 font-bold ${method === mm ? "bg-cyan-400 text-slate-950" : "border border-white/10 text-slate-300"}`}>
+                {mm === "first" ? "First Angle" : "Third Angle"}
+              </button>
+            ))}
+          </label>
+          <label className="flex items-center gap-1.5 text-slate-400">
+            <span className="font-mono text-[10px] uppercase">Units</span>
+            {(["mm", "cm", "m"] as const).map((u) => (
+              <button key={u} onClick={() => set({ unit: u })} className={`rounded-lg px-2 py-1 font-mono font-bold ${unit === u ? "bg-white text-slate-950" : "border border-white/10"}`}>{u}</button>
+            ))}
+          </label>
+          <label className="flex items-center gap-1.5 text-slate-400">
+            <span className="font-mono text-[10px] uppercase">Scale</span>
+            {(["1:1", "1:2", "1:5", "1:10", "2:1"] as Scale[]).map((sc) => (
+              <button key={sc} onClick={() => set({ scale: sc })} className={`rounded-lg px-2 py-1 font-mono font-bold ${scale === sc ? "bg-white text-slate-950" : "border border-white/10"}`}>{sc}</button>
+            ))}
+          </label>
+          <label className="flex items-center gap-1.5 text-slate-400">
+            <span className="font-mono text-[10px] uppercase">Views</span>
+            {(["all", "front", "top", "side"] as Focus[]).map((v) => (
+              <button key={v} onClick={() => setFocus(v)} className={`rounded-lg px-2.5 py-1 font-mono font-bold uppercase ${focus === v ? "bg-cyan-400 text-slate-950" : "border border-white/10"}`}>
+                {v}
+              </button>
+            ))}
+          </label>
+        </div>
+        <div className="mt-2 font-mono text-[11px] leading-relaxed text-slate-500">{mi.blurb} Display scale changes only the drawing size — all dimensions stay true millimeters.</div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <Toggle on={showHidden} label="Hidden" onClick={() => set({ showHiddenLines: !showHidden })} />
+          <Toggle on={showCenter} label="Center" onClick={() => set({ showCenterLines: !showCenter })} />
+          <Toggle on={showDims} label="Dims" onClick={() => set({ showDims: !showDims })} />
+          <Toggle on={showProj} label="Projectors" onClick={() => set({ showProjectors: !showProj })} />
+          <Toggle on={showAngles} label="Angles" onClick={() => set({ showAngles: !showAngles })} />
+          <Toggle on={showLabels} label="Labels" onClick={() => set({ showLabels: !showLabels })} />
+          <span className="mx-1 h-5 w-px bg-white/10" />
+          <button onClick={() => set({ centerMode: "2d", sidebar: "Visualizer" })} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[12px] font-bold text-slate-950">
+            <Boxes size={13} /> 3D → 2D sheet
+          </button>
+          <button onClick={() => downloadSVG("lab-canvas", `geodraft-${solid.kind}-projection.svg`)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-[12px] text-slate-200">
+            <Download size={13} /> SVG
+          </button>
+          <button onClick={exportDXF} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[12px] font-bold text-slate-950">
+            <Download size={13} /> DXF (AutoCAD)
+          </button>
+          <button onClick={printSheet} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-[12px] text-slate-200">
+            <Printer size={13} /> PDF
+          </button>
+          <button onClick={() => setChecking(!checking)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-bold ${checking ? "bg-amber-300 text-slate-950" : "border border-amber-300/40 text-amber-200"}`}>
+            <ClipboardCheck size={13} /> Check Projection
+          </button>
+        </div>
+      </div>
+
+      {checking && (
+        <div className="glass grid gap-2 rounded-2xl p-4 md:grid-cols-2">
+          <div>
+            <div className="font-mono text-[11px] uppercase tracking-widest text-slate-500">Geometry accuracy (measured from model)</div>
+            <div className="mt-2 space-y-1.5">
+              {acc.map((c) => <CheckRow key={c.id} item={c} />)}
+            </div>
+          </div>
+          <div>
+            <div className="font-mono text-[11px] uppercase tracking-widest text-slate-500">Drawing check ({mi.title})</div>
+            <div className="mt-2 space-y-1.5">
+              {draw.map((c) => <CheckRow key={c.id} item={c} />)}
+            </div>
           </div>
         </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">Drawing build-up guide</div>
         <div className="ml-auto flex items-center gap-1.5">
           <button onClick={() => setIdx(Math.max(0, idx - 1))} className="rounded-lg border border-white/10 p-2 hover:border-cyan-300/40">
             <ChevronLeft size={15} />
           </button>
           <button onClick={() => setPlaying(!playing)} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400 px-4 py-2 text-[12px] font-bold text-slate-950">
-            {playing ? <Pause size={13} /> : <Play size={13} />} {playing ? "Pause" : "Play build-up"}
+            {playing ? <Pause size={13} /> : <Play size={13} />} {playing ? "Pause" : "Animate Projection"}
           </button>
           <button onClick={() => setIdx(Math.min(steps.length - 1, idx + 1))} className="rounded-lg border border-white/10 p-2 hover:border-cyan-300/40">
             <ChevronRight size={15} />
@@ -81,7 +190,7 @@ export default function ProjectionLab() {
 
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="glass min-h-[480px] overflow-hidden rounded-2xl p-2">
-          <LabViewsSVG solid={solid} reveal={reveal} activePointId={activePoint} animateProjectors={animate} sweeping={playing && animate} />
+          <LabViewsSVG solid={solid} reveal={reveal} activePointId={activePoint} animateProjectors={animate} sweeping={playing && animate} focus={focus} />
         </div>
 
         <div className="flex flex-col gap-2">
@@ -135,6 +244,26 @@ export default function ProjectionLab() {
             Clear point highlight
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ on, label, onClick }: { on: boolean; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`rounded-lg px-2.5 py-1.5 font-mono text-[11px] font-bold ${on ? "bg-cyan-400/90 text-slate-950" : "border border-white/10 text-slate-400"}`}>
+      {label}
+    </button>
+  );
+}
+
+function CheckRow({ item }: { item: { label: string; pass: boolean; detail: string } }) {
+  return (
+    <div className={`flex gap-2 rounded-xl border px-3 py-2 ${item.pass ? "border-emerald-300/25 bg-emerald-300/5" : "border-amber-300/30 bg-amber-300/5"}`}>
+      {item.pass ? <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-300" /> : <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-300" />}
+      <div>
+        <div className="text-[12.5px] font-bold">{item.pass ? "✓" : "⚠"} {item.label}</div>
+        <div className="text-[12px] leading-snug text-slate-400">{item.detail}</div>
       </div>
     </div>
   );

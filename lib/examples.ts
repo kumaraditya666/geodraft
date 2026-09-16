@@ -111,4 +111,31 @@ export const EXAMPLES: ExampleItem[] = [
     restingPlane: "HP",
     inclinations: {},
   }),
+  p("frustum-hp", "Frustum on HP", "Frustum", "A frustum of a cone with bottom diameter 60 mm, top diameter 30 mm and height 70 mm rests on HP on its base.", {
+    solid: "frustum",
+    dimensions: { diameter: 60, topDiameter: 30, height: 70 },
+    restingPlane: "HP",
+    inclinations: {},
+  }),
+  p("hemi-hp", "Hemisphere on HP", "Hemisphere", "A hemisphere of diameter 60 mm rests on HP on its flat face.", {
+    solid: "hemisphere",
+    dimensions: { diameter: 60 },
+    restingPlane: "HP",
+    inclinations: {},
+  }),
+  p("tetra-hp", "Tetrahedron on HP", "Tetrahedron", "A regular tetrahedron of side 50 mm rests on HP on its base.", {
+    solid: "tetrahedron",
+    dimensions: { side: 50 },
+    restingPlane: "HP",
+    inclinations: {},
+  }),
+  p("square-corner", "Square on corner, diagonal to VP", "Lamina • corner", "A square lamina ABCD of 30 mm side, rests on its corner C in HP. Its plane is inclined at 45° to the XY line such that its diagonal DB is parallel to the HP and inclined at 30° to the VP. Draw its projections when its corner D is towards the VP and 15 mm in front of it.", {
+    solid: "plane",
+    planeShape: "square",
+    dimensions: { side: 30, distVP: 15 },
+    restingPlane: "HP",
+    inclinations: { HP: 45, VP: 30 },
+    planeMode: "diagonal",
+    diagonalAngleVP: 30,
+  }),
 ];

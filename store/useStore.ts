@@ -1,12 +1,12 @@
 "use client";
 import { create } from "zustand";
-import type { BuiltSolid, ParsedQuestion, ViewKind } from "@/types";
+import type { BuiltSolid, ParsedQuestion, ProjectionMethod, ViewKind } from "@/types";
 import { buildSolid } from "@/lib/geometry/solids";
 import { parseEngineeringQuestion, buildSteps } from "@/lib/parser/engineeringParser";
 import { EXAMPLES } from "@/lib/examples";
 
 export type Screen = "landing" | "workspace";
-export type Scale = "1:1" | "1:2" | "1:5" | "2:1";
+export type Scale = "1:1" | "1:2" | "1:5" | "1:10" | "2:1";
 
 interface State {
   screen: Screen;
@@ -17,6 +17,13 @@ interface State {
   activeView: ViewKind | "all";
   showLabels: boolean;
   showRays: boolean;
+  showAngles: boolean;
+  showCenterLines: boolean;
+  showHiddenLines: boolean;
+  showDims: boolean;
+  showProjectors: boolean;
+  projectionMethod: ProjectionMethod;
+  centerMode: "3d" | "2d";
   studentMode: boolean;
   showHP: boolean;
   showVP: boolean;
@@ -68,6 +75,13 @@ export const useStore = create<State>((set, get) => ({
   activeView: "all",
   showLabels: true,
   showRays: true,
+  showAngles: true,
+  showCenterLines: true,
+  showHiddenLines: true,
+  showDims: true,
+  showProjectors: true,
+  projectionMethod: "first",
+  centerMode: "3d",
   studentMode: true,
   showHP: true,
   showVP: true,

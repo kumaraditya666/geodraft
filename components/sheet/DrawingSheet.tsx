@@ -20,6 +20,7 @@ export default function DrawingSheet() {
   const question = useStore((s) => s.question);
   const scale = useStore((s) => s.scale);
   const unit = useStore((s) => s.unit);
+  const method = useStore((s) => s.projectionMethod);
 
   if (!sheetOpen || !solid) return null;
 
@@ -76,7 +77,7 @@ export default function DrawingSheet() {
             ["Title", `GeoDraft AI — ${solid.kind}`],
             ["Scale", scale],
             ["Units", unit],
-            ["Projection", "First-angle • XY"],
+            ["Projection", method === "first" ? "First-angle • XY" : "Third-angle • XY"],
             ["Front", "(x, z) on VP"],
             ["Top", "(x, y) on HP"],
             ["Side", "(y, z)"],

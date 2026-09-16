@@ -41,6 +41,12 @@ export function buildSolid(parsed: ParsedQuestion): BuiltSolid {
       return buildCone(parsed);
     case "cylinder":
       return buildCylinder(parsed);
+    case "frustum":
+      return buildFrustum(parsed);
+    case "hemisphere":
+      return buildHemisphere(parsed);
+    case "tetrahedron":
+      return buildTetrahedron(parsed);
     case "prism":
       return buildPrism(parsed);
     case "pyramid":
@@ -390,6 +396,9 @@ function buildPlane(parsed: ParsedQuestion): BuiltSolid {
   const notes: string[] = [];
   const tiltHP = parsed.inclinations.HP ?? 30;
   const yawVP = parsed.inclinations.VP ?? 0;
+  if (parsed.planeMode === "diagonal" && (shape.includes("square") || shape.includes("rect"))) {
+    return buildDiagonalLamina(parsed, notes);
+  }
   // Build flat lamina in horizontal plane, then tilt about X by tiltHP, yaw about Z by yawVP
   const mkLocal = (): Vec3[] => {
     if (shape.includes("circle") || shape.includes("circular")) {
@@ -423,8 +432,10 @@ function buildPlane(parsed: ParsedQuestion): BuiltSolid {
         return v(Math.cos(t) * R, Math.sin(t) * R, 0);
       });
     }
-    const w = d.width ?? d.side ?? 60;
-    const l = d.length ?? d.height ?? 40;
+    const isSquare = shape.includes("square");
+    const sq = d.side ?? 30;
+    const w = isSquare ? sq : (d.width ?? d.side ?? 60);
+    const l = isSquare ? sq : (d.length ?? d.height ?? 40);
     return [v(-w / 2, -l / 2, 0), v(w / 2, -l / 2, 0), v(w / 2, l / 2, 0), v(-w / 2, l / 2, 0)];
   };
   const tilt = (tiltHP * Math.PI) / 180;
@@ -443,11 +454,78 @@ function buildPlane(parsed: ParsedQuestion): BuiltSolid {
   return { kind: "plane", parsed, vertices, edges, faces, axisDir: n, baseCenter: centroid(sh), bbox: bboxOf(sh), notes };
 }
 
+/**
+ * Corner-resting lamina with a horizontal diagonal:
+ * corner C touches HP, diagonal DB stays parallel to HP at `yaw` to VP,
+ * surface tilted `tilt` to HP. Constructed exactly (rotation about DB):
+ *   DB endpoints B/D at center height, C dipped to z=0, A raised.
+ * D is placed frontal (+Y); optional distVP pins D's distance from VP.
+ */
+function buildDiagonalLamina(parsed: ParsedQuestion, notes: string[]): BuiltSolid {
+  const d = parsed.dimensions;
+  const shape = (parsed.planeShape ?? "square").toLowerCase();
+  const sq = d.side ?? 30;
+  const w = shape.includes("square") ? sq : (d.width ?? sq);
+  const l = shape.includes("square") ? sq : (d.length ?? d.height ?? sq);
+  const tilt = ((parsed.inclinations.HP ?? 45) * Math.PI) / 180;
+  const yawDeg = parsed.diagonalAngleVP ?? parsed.inclinations.VP ?? 0;
+  const yaw = (yawDeg * Math.PI) / 180;
+  const hd = Math.hypot(w, l) / 2; // half-diagonal
+  const ux = Math.cos(yaw);
+  const uy = Math.sin(yaw);
+  const nx = Math.sin(yaw);
+  const ny = -Math.cos(yaw);
+  const ct = Math.cos(tilt);
+  const st = Math.sin(tilt);
+  const mz = hd * st; // center height so that C lands exactly on HP
+  const M = v(0, 0, mz);
+  const B = v(M.x - ux * hd, M.y - uy * hd, mz);
+  const D = v(M.x + ux * hd, M.y + uy * hd, mz);
+  const C = v(M.x + hd * ct * nx, M.y + hd * ct * ny, mz - hd * st);
+  const A = v(M.x - hd * ct * nx, M.y - hd * ct * ny, mz + hd * st);
+  let corners = [A, B, C, D];
+  // pin corner D at the specified distance in front of VP
+  if (d.distVP !== undefined) {
+    const dy = d.distVP - D.y;
+    corners = corners.map((p) => v(p.x, p.y + dy, p.z));
+    notes.push(`Corner D placed ${d.distVP} mm in front of VP.`);
+  }
+  const [fA, fB, fC, fD] = corners;
+  const n = faceNormal([fA, fB, fC]);
+  const ctr = centroid(corners);
+  const vertices: LabeledPoint3D[] = [
+    { id: "corner-a", label: "A", p: fA },
+    { id: "corner-b", label: "B", p: fB },
+    { id: "corner-c", label: "C", p: fC },
+    { id: "corner-d", label: "D", p: fD },
+    { id: "center", label: "", p: ctr },
+  ];
+  const faces: Face3D[] = [
+    { id: "lamina", verts: [0, 1, 2, 3], normal: n, center: ctr },
+    { id: "lamina-back", verts: [0, 1, 2, 3], normal: scale(n, -1), center: ctr },
+  ];
+  const edges: Edge3D[] = [0, 1, 2, 3].map((i) => ({
+    id: `e-${i}`,
+    a: i,
+    b: (i + 1) % 4,
+    faces: [0, 1],
+    sharp: true,
+  }));
+  const tiltDeg = Math.round((parsed.inclinations.HP ?? 45) * 10) / 10;
+  notes.push(
+    `Square ${w}×${l} mm on corner C (z=0). Diagonal DB horizontal at ${yawDeg}° to VP; surface tilted ${tiltDeg}° to HP. DB midpoint height ${Math.round(mz * 10) / 10} mm.`
+  );
+  const minY = Math.min(...corners.map((p) => p.y));
+  if (minY < -1e-9) notes.push(`Nearest corner sits ${Math.round(Math.abs(minY) * 10) / 10} mm behind VP — only D's offset was specified.`);
+  return { kind: "plane", parsed, vertices, edges, faces, axisDir: n, baseCenter: ctr, bbox: bboxOf([...corners, ctr]), notes };
+}
+
 function buildBox(parsed: ParsedQuestion): BuiltSolid {
   const d = parsed.dimensions;
-  const w = d.width ?? 60;
-  const dep = d.depth ?? 40;
-  const h = d.height ?? 50;
+  const side = d.side ?? d.edge;
+  const w = d.width ?? side ?? 60;
+  const dep = d.depth ?? side ?? 40;
+  const h = d.height ?? d.length ?? side ?? 50;
   const c = v(0, 20, h / 2);
   const x = w / 2, y = dep / 2, z = h / 2;
   const corners = [
@@ -467,10 +545,188 @@ function buildBox(parsed: ParsedQuestion): BuiltSolid {
 }
 
 function buildSphere(parsed: ParsedQuestion): BuiltSolid {
-  const r = (parsed.dimensions.diameter ?? 50) / 2;
+  const r = (parsed.dimensions.diameter ?? parsed.dimensions.radius !== undefined ? (parsed.dimensions.radius as number) * 2 : 50) / 2;
   const c = v(0, r + 0.01, r);
   const vertices: LabeledPoint3D[] = [{ id: "c", label: "C", p: c }];
   const faces: Face3D[] = [{ id: "s", verts: [0], normal: v(0, 1, 0), center: c }];
   const edges: Edge3D[] = [];
   return { kind: "sphere", parsed, vertices, edges, faces, axisDir: v(0, 0, 1), baseCenter: c, radius: r, bbox: bboxOf([v(c.x - r, c.y - r, c.z - r), v(c.x + r, c.y + r, c.z + r)]), notes: [] };
+}
+
+function resolveAxis(parsed: ParsedQuestion, notes: string[]): Vec3 {
+  const aH = parsed.inclinations.HP;
+  const aV = parsed.inclinations.VP;
+  try {
+    if (parsed.restingPlane === "HP" && aH === undefined && aV === undefined) {
+      notes.push("Base flat on HP, axis vertical (perpendicular to HP, parallel to VP).");
+      return v(0, 0, 1);
+    }
+    if (parsed.restingPlane === "HP" && aH === undefined && aV !== undefined) {
+      notes.push(`Axis parallel to HP, inclined ${aV}° to VP. Lowest generator contacts HP.`);
+      return axisFromAngles(0, aV);
+    }
+    notes.push(`Axis inclined ${aH ?? 0}° to HP, ${aV ?? 0}° to VP. Lowest point contacts resting plane.`);
+    return axisFromAngles(aH, aV);
+  } catch {
+    notes.push("Given HP/VP angles are geometrically impossible together; clamped to feasible direction.");
+    return axisFromAngles(0, aV ?? 0);
+  }
+}
+
+/** Frustum of a right circular cone: bottom radius rb, top radius rt, height h along axis. */
+function buildFrustum(parsed: ParsedQuestion): BuiltSolid {
+  const d = parsed.dimensions;
+  const rb = (d.diameter ?? (d.radius !== undefined ? d.radius * 2 : 60)) / 2;
+  const rt = (d.topDiameter ?? (d.topRadius !== undefined ? d.topRadius * 2 : rb)) / 2;
+  const h = d.height ?? d.length ?? 60;
+  const notes: string[] = [];
+  const axis = resolveAxis(parsed, notes);
+  const { e1, e2 } = basisForAxis(axis);
+  const Cb0 = v(0, 0, 0);
+  const Ct0 = add(Cb0, scale(axis, h));
+  const ring = (c: Vec3, r: number): Vec3[] =>
+    Array.from({ length: N_SMOOTH }, (_, i) => {
+      const a = (i / N_SMOOTH) * Math.PI * 2;
+      return add(c, add(scale(e1, Math.cos(a) * r), scale(e2, Math.sin(a) * r)));
+    });
+  const b0 = ring(Cb0, rb);
+  const t0 = ring(Ct0, rt);
+  const { pts: sh } = shiftToRest([Cb0, Ct0, ...b0, ...t0], parsed.restingPlane);
+  const Cb = sh[0];
+  const Ct = sh[1];
+  const b = sh.slice(2, 2 + N_SMOOTH);
+  const t = sh.slice(2 + N_SMOOTH);
+  const vertices: LabeledPoint3D[] = [
+    { id: "base-center", label: "C", p: Cb },
+    { id: "top-center", label: "C'", p: Ct },
+    ...b.map((p, i) => ({ id: `b-${i}`, label: i < 4 ? labelBase(i) : "", p })),
+    ...t.map((p, i) => ({ id: `t-${i}`, label: i < 4 ? `${labelBase(i)}'` : "", p })),
+  ];
+  const faces: Face3D[] = [];
+  for (let i = 0; i < N_SMOOTH; i++) {
+    const j = (i + 1) % N_SMOOTH;
+    faces.push({
+      id: `lat-${i}`,
+      verts: [2 + i, 2 + j, 2 + N_SMOOTH + j, 2 + N_SMOOTH + i],
+      normal: faceNormal([b[i], b[j], t[j]]),
+      center: centroid([b[i], b[j], t[j], t[i]]),
+    });
+  }
+  faces.push({ id: "base", verts: b.map((_, i) => 2 + i), normal: scale(axis, -1), center: Cb });
+  faces.push({ id: "top", verts: t.map((_, i) => 2 + N_SMOOTH + i), normal: axis, center: Ct });
+  const edges: Edge3D[] = [];
+  for (let i = 0; i < N_SMOOTH; i++) {
+    const j = (i + 1) % N_SMOOTH;
+    edges.push({ id: `brim-${i}`, a: 2 + i, b: 2 + j, faces: [N_SMOOTH], sharp: true });
+    edges.push({ id: `trim-${i}`, a: 2 + N_SMOOTH + i, b: 2 + N_SMOOTH + j, faces: [N_SMOOTH + 1], sharp: true });
+    edges.push({ id: `gen-${i}`, a: 2 + i, b: 2 + N_SMOOTH + i, faces: [i, (i + N_SMOOTH - 1) % N_SMOOTH], sharp: false, silhouetteOnly: true });
+  }
+  notes.push(`Frustum: base ⌀${rb * 2} mm, top ⌀${rt * 2} mm, height ${h} mm.`);
+  return {
+    kind: "frustum", parsed, vertices, edges, faces, axisDir: axis,
+    baseCenter: Cb, topCenter: Ct, radius: rb, height: h,
+    bbox: bboxOf([...b, ...t, Cb, Ct]), notes,
+  };
+}
+
+/** Hemisphere: flat circular face at baseCenter, dome extends along axis. */
+function buildHemisphere(parsed: ParsedQuestion): BuiltSolid {
+  const d = parsed.dimensions;
+  const r = d.radius ?? (d.diameter ?? 50) / 2;
+  const notes: string[] = [];
+  const axis = resolveAxis(parsed, notes);
+  const { e1, e2 } = basisForAxis(axis);
+  const Cb0 = v(0, 0, 0);
+  const N = 24;
+  const K = 8;
+  const ringAt = (elev: number): Vec3[] => {
+    const rr = r * Math.cos(elev);
+    const hh = r * Math.sin(elev);
+    return Array.from({ length: N }, (_, i) => {
+      const a = (i / N) * Math.PI * 2;
+      return add(add(Cb0, scale(axis, hh)), add(scale(e1, Math.cos(a) * rr), scale(e2, Math.sin(a) * rr)));
+    });
+  };
+  const rings: Vec3[][] = [ringAt(0)];
+  for (let k = 1; k <= K; k++) rings.push(ringAt((k / K) * (Math.PI / 2)));
+  const pole = add(Cb0, scale(axis, r));
+  const flat: Vec3[] = [Cb0, pole, ...rings.flat()];
+  const { pts: sh } = shiftToRest(flat, parsed.restingPlane);
+  const Cb = sh[0];
+  const P = sh[1];
+  const R: Vec3[][] = [];
+  for (let k = 0; k <= K; k++) R.push(sh.slice(2 + k * N, 2 + (k + 1) * N));
+  const idx = (k: number, i: number) => 2 + k * N + ((i % N + N) % N);
+  const vertices: LabeledPoint3D[] = [
+    { id: "base-center", label: "C", p: Cb },
+    { id: "apex", label: "O", p: P },
+    ...R[0].map((p, i) => ({ id: `rim-${i}`, label: i < 4 ? labelBase(i) : "", p })),
+  ];
+  const faces: Face3D[] = [];
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N;
+    faces.push({ id: `q0-${i}`, verts: [idx(0, i), idx(0, j), idx(1, j), idx(1, i)], normal: faceNormal([R[0][i], R[0][j], R[1][j]]), center: centroid([R[0][i], R[0][j], R[1][j], R[1][i]]) });
+  }
+  for (let k = 1; k < K; k++) {
+    for (let i = 0; i < N; i++) {
+      const j = (i + 1) % N;
+      faces.push({ id: `q${k}-${i}`, verts: [idx(k, i), idx(k, j), idx(k + 1, j), idx(k + 1, i)], normal: faceNormal([R[k][i], R[k][j], R[k + 1][j]]), center: centroid([R[k][i], R[k][j], R[k + 1][j], R[k + 1][i]]) });
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N;
+    faces.push({ id: `cap-${i}`, verts: [1, idx(K, i), idx(K, j)], normal: faceNormal([P, R[K][i], R[K][j]]), center: centroid([P, R[K][i], R[K][j]]) });
+  }
+  faces.push({ id: "base", verts: R[0].map((_, i) => 2 + i), normal: scale(axis, -1), center: Cb });
+  const edges: Edge3D[] = [];
+  const baseFaceIdx = faces.length - 1;
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N;
+    edges.push({ id: `rim-${i}`, a: 2 + i, b: 2 + j, faces: [i, baseFaceIdx], sharp: true });
+  }
+  notes.push(`Hemisphere ⌀${r * 2} mm, flat face on ${parsed.restingPlane ?? "HP"}.`);
+  return {
+    kind: "hemisphere", parsed, vertices, edges, faces, axisDir: axis,
+    baseCenter: Cb, apex: P, radius: r, height: r,
+    bbox: bboxOf([Cb, P, ...R.flat()]), notes,
+  };
+}
+
+/** Regular tetrahedron: equilateral-triangle base ⊥ axis, apex along axis. */
+function buildTetrahedron(parsed: ParsedQuestion): BuiltSolid {
+  const d = parsed.dimensions;
+  const s = d.side ?? d.edge ?? 40;
+  const hgt = s * Math.sqrt(2 / 3);
+  const R = s / Math.sqrt(3);
+  const notes: string[] = [];
+  const axis = resolveAxis(parsed, notes);
+  const { e1, e2 } = basisForAxis(axis);
+  const Cb0 = v(0, 0, 0);
+  const A0 = add(Cb0, scale(axis, hgt));
+  const ring0 = [0, 1, 2].map((i) => {
+    const a = Math.PI / 2 + (i / 3) * Math.PI * 2;
+    return add(Cb0, add(scale(e1, Math.cos(a) * R), scale(e2, Math.sin(a) * R)));
+  });
+  const { pts: sh } = shiftToRest([Cb0, A0, ...ring0], parsed.restingPlane);
+  const Cb = sh[0];
+  const A = sh[1];
+  const ring = sh.slice(2);
+  const vertices: LabeledPoint3D[] = [
+    { id: "apex", label: "O", p: A },
+    { id: "base-center", label: "C", p: Cb },
+    ...ring.map((p, i) => ({ id: `b-${i}`, label: labelBase(i), p })),
+  ];
+  const faces: Face3D[] = [0, 1, 2].map((i) => {
+    const j = (i + 1) % 3;
+    return { id: `lat-${i}`, verts: [0, 2 + i, 2 + j], normal: faceNormal([A, ring[i], ring[j]]), center: centroid([A, ring[i], ring[j]]) };
+  });
+  faces.push({ id: "base", verts: [2, 3, 4], normal: scale(axis, -1), center: Cb });
+  const edges: Edge3D[] = [];
+  const pairs: [number, number, number[]][] = [
+    [2, 3, [3, 0]], [3, 4, [3, 1]], [4, 2, [3, 2]],
+    [0, 2, [0, 2]], [0, 3, [0, 1]], [0, 4, [1, 2]],
+  ];
+  pairs.forEach(([a, b, f], i) => edges.push({ id: `e-${i}`, a, b, faces: f, sharp: true }));
+  notes.push(`Regular tetrahedron, edge ${s} mm, height ${Math.round(hgt * 10) / 10} mm.`);
+  return { kind: "tetrahedron", parsed, vertices, edges, faces, axisDir: axis, baseCenter: Cb, apex: A, height: hgt, bbox: bboxOf([A, Cb, ...ring]), notes };
 }

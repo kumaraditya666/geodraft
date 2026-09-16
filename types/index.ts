@@ -7,12 +7,17 @@ export interface Vec3 {
 export type SolidKind =
   | "cone"
   | "cylinder"
+  | "frustum"
+  | "hemisphere"
+  | "tetrahedron"
   | "prism"
   | "pyramid"
   | "line"
   | "plane"
   | "box"
   | "sphere";
+
+export type ProjectionMethod = "first" | "third";
 
 export type RestingPlane = "HP" | "VP" | null;
 
@@ -31,6 +36,9 @@ export interface ParsedQuestion {
   inclinations: Inclinations;
   sides?: number;
   planeShape?: string;
+  /** lamina construction: edge-resting tilt vs diagonal-horizontal corner resting */
+  planeMode?: "edge" | "diagonal";
+  diagonalAngleVP?: number;
   raw: string;
   confidence: number;
   unclear: string[];
