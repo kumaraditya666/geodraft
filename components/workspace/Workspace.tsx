@@ -1,12 +1,15 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   DraftingCompass, Plus, LayoutGrid, HelpCircle, Save, FolderOpen, GraduationCap,
   Settings2, Home, Eye, MessageSquareText, FileImage, SplitSquareHorizontal, Tag, PencilRuler,
+  Download, Printer, Box, ScanLine, Ruler, Layers, FileOutput,
 } from "lucide-react";
 import { useStore } from "@/store/useStore";
+import type { WorkspaceTab } from "@/store/useStore";
 import { EXAMPLES } from "@/lib/examples";
 import QuestionPanel from "@/components/question/QuestionPanel";
 import CameraBar from "@/components/controls/CameraBar";
@@ -17,12 +20,26 @@ import DrawingSheet from "@/components/sheet/DrawingSheet";
 import ProjectionLab from "@/components/lab/ProjectionLab";
 import Footer from "@/components/ui/Footer";
 import LabViewsSVG from "@/components/lab/LabViewsSVG";
+import DimensionList from "@/components/dimensions/DimensionList";
+import { buildDXF } from "@/lib/projection/dxfExporter";
+import { downloadSVG, downloadText, printSheet } from "@/lib/projection/svgExporter";
+import type { ProjectionMethod } from "@/types";
 
 const Viewer3D = dynamic(() => import("@/components/viewer3d/Viewer3D"), { ssr: false });
 
 type ViewTab = "front" | "top" | "side" | "all";
 
+const WTABS: { k: WorkspaceTab; label: string; slug: string; icon: typeof Box }[] = [
+  { k: "model", label: "3D Model", slug: "/visualizer", icon: Box },
+  { k: "projection", label: "Projection", slug: "/visualizer/projection", icon: ScanLine },
+  { k: "construction", label: "Construction", slug: "/visualizer/construction", icon: Layers },
+  { k: "dimensions", label: "Dimensions", slug: "/visualizer/dimensions", icon: Ruler },
+  { k: "sheet", label: "Drawing Sheet", slug: "/visualizer/drawing", icon: FileOutput },
+  { k: "export", label: "Export", slug: "/visualizer/export", icon: Download },
+];
+
 export default function Workspace() {
+  const router = useRouter();
   const set = useStore((s) => s.set);
   const setQuestion = useStore((s) => s.setQuestion);
   const generate = useStore((s) => s.generate);
@@ -32,7 +49,8 @@ export default function Workspace() {
   const showLabels = useStore((s) => s.showLabels);
   const showRays = useStore((s) => s.showRays);
   const showAngles = useStore((s) => s.showAngles);
-  const centerMode = useStore((s) => s.centerMode);
+  const wtab = useStore((s) => s.wtab);
+  const method = useStore((s) => s.projectionMethod);
   const showHP = useStore((s) => s.showHP);
   const showVP = useStore((s) => s.showVP);
   const splitMode = useStore((s) => s.splitMode);
@@ -47,6 +65,28 @@ export default function Workspace() {
 
   const [tab, setTab] = useState<ViewTab>("all");
   const [qbox, setQbox] = useState(question);
+
+  // tab side-effects: construction auto-plays + scrolls to steps, sheet opens the sheet
+  useEffect(() => {
+    if (wtab === "construction") {
+      set({ stepIndex: 0, playing: true });
+      const t = setTimeout(() => document.getElementById("steps-bar")?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+      return () => clearTimeout(t);
+    }
+    if (wtab === "sheet") set({ sheetOpen: true });
+    return undefined;
+  }, [wtab, set]);
+
+  const goTab = (t: WorkspaceTab) => {
+    const slug = WTABS.find((x) => x.k === t)?.slug ?? "/visualizer";
+    set({ wtab: t });
+    router.push(slug);
+  };
+
+  const goHome = () => {
+    set({ screen: "landing" });
+    router.push("/");
+  };
 
   const explainView = () => {
     if (!solid) return;
@@ -68,7 +108,7 @@ export default function Workspace() {
     <div className="flex min-h-screen bg-[#05070d]">
       {/* sidebar */}
       <aside className="hidden w-52 shrink-0 flex-col border-r border-white/10 bg-[#070b14] p-3 md:flex">
-        <button onClick={() => set({ screen: "landing" })} className="flex items-center gap-2 rounded-xl p-2 hover:bg-white/5">
+        <button onClick={goHome} className="flex items-center gap-2 rounded-xl p-2 hover:bg-white/5">
           <div className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300"><DraftingCompass size={17} /></div>
           <span className="font-display font-bold">GeoDraft <span className="text-cyan-300">AI</span></span>
         </button>
@@ -101,9 +141,9 @@ export default function Workspace() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* top nav */}
         <header className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-[#070b14]/80 px-4 py-2.5 backdrop-blur">
-          <button onClick={() => set({ screen: "landing" })} className="font-mono text-[11px] text-slate-500 hover:text-cyan-200">← Home</button>
+          <button onClick={goHome} className="font-mono text-[11px] text-slate-500 hover:text-cyan-200">← Home</button>
           <div className="flex items-center gap-2">
-            <button onClick={() => { setQbox(""); set({ screen: "landing" }); }} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400 px-3 py-1.5 text-[12px] font-bold text-slate-950">
+            <button onClick={() => { setQbox(""); goHome(); }} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400 px-3 py-1.5 text-[12px] font-bold text-slate-950">
               <Plus size={13} /> New Question
             </button>
             <button onClick={() => set({ sidebar: "Examples" })} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-[12px] text-slate-200">
@@ -145,19 +185,21 @@ export default function Workspace() {
 
               {/* center */}
               <div className="flex min-h-[420px] flex-col gap-2">
+                <div className="glass flex flex-wrap items-center gap-1 rounded-2xl p-1.5">
+                  {WTABS.map((t) => (
+                    <button
+                      key={t.k}
+                      onClick={() => goTab(t.k)}
+                      className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 py-2 font-mono text-[11px] font-bold uppercase tracking-wide transition ${
+                        wtab === t.k ? "bg-cyan-400 text-slate-950" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                      }`}
+                    >
+                      <t.icon size={13} /> {t.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex rounded-lg border border-white/10 p-0.5">
-                    {(["3d", "2d"] as const).map((mm) => (
-                      <button
-                        key={mm}
-                        onClick={() => set({ centerMode: mm })}
-                        className={`rounded-md px-3 py-1.5 font-mono text-[11px] font-bold uppercase ${centerMode === mm ? "bg-cyan-400 text-slate-950" : "text-slate-400"}`}
-                      >
-                        {mm === "3d" ? "3D Model" : "2D Projection"}
-                      </button>
-                    ))}
-                  </div>
-                  {centerMode === "3d" && <CameraBar />}
+                  {(wtab === "model" || wtab === "construction" || wtab === "dimensions") && <CameraBar />}
                   <div className="ml-auto flex flex-wrap items-center gap-1.5 text-[11px]">
                     <Toggle on={showHP} label="HP" onClick={() => set({ showHP: !showHP })} />
                     <Toggle on={showVP} label="VP" onClick={() => set({ showVP: !showVP })} />
@@ -167,15 +209,46 @@ export default function Workspace() {
                     <Toggle on={splitMode} label="3D↔2D" icon={<SplitSquareHorizontal size={11} />} onClick={() => set({ splitMode: !splitMode })} />
                   </div>
                 </div>
+                {wtab === "construction" && (
+                  <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/5 px-3 py-2 text-[12.5px] text-cyan-100/90">
+                    Construction auto-playing — follow the steps below, or scrub them manually. ↓
+                  </div>
+                )}
                 <div className="min-h-[380px] flex-1">
-                  {centerMode === "3d" ? (
+                  {(wtab === "model" || wtab === "construction" || wtab === "dimensions" || wtab === "sheet") ? (
                     <Viewer3D />
                   ) : solid ? (
                     <div className="h-full w-full overflow-hidden rounded-2xl border-2 border-slate-700">
-                      <LabViewsSVG solid={solid} reveal={5} activePointId={selectedPoint} animateProjectors={false} sweeping={false} sheet />
+                      <LabViewsSVG solid={solid} reveal={5} activePointId={selectedPoint} animateProjectors={wtab === "projection"} sweeping={false} sheet={wtab !== "projection"} />
                     </div>
                   ) : null}
                 </div>
+                {wtab === "dimensions" && (
+                  <div className="glass rounded-2xl p-3">
+                    <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">Dimensions — from the live model</div>
+                    <div className="mt-2"><DimensionList /></div>
+                  </div>
+                )}
+                {wtab === "export" && solid && (
+                  <div className="glass rounded-2xl p-3">
+                    <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">Export — vector output, true millimeters</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button onClick={() => downloadSVG("lab-canvas", `geodraft-${solid.kind}-projection.svg`)} className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-4 py-2 text-[12.5px] font-bold text-slate-100 hover:border-cyan-300/40">
+                        <Download size={14} /> Export SVG
+                      </button>
+                      <button
+                        onClick={() => downloadText(`geodraft-${solid.kind}-${method}-angle-mm.dxf`, buildDXF(solid, { method: method as ProjectionMethod, unit }), "application/dxf")}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-400 px-4 py-2 text-[12.5px] font-bold text-slate-950"
+                      >
+                        <Download size={14} /> Export DXF (AutoCAD)
+                      </button>
+                      <button onClick={printSheet} className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-4 py-2 text-[12.5px] font-bold text-slate-100 hover:border-cyan-300/40">
+                        <Printer size={14} /> Export PDF
+                      </button>
+                    </div>
+                    <p className="mt-2 font-mono text-[11px] text-slate-500">DXF carries editable LINE/CIRCLE/ARC/TEXT entities on engineering layers • {method === "first" ? "first" : "third"}-angle • {unit} • scale {scale}</p>
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-slate-400">
                   <span className="font-mono">SCALE</span>
                   {(["1:1", "1:2", "1:5", "1:10", "2:1"] as const).map((sc) => (
@@ -228,7 +301,7 @@ export default function Workspace() {
                 )}
               </div>
             </div>
-            <div className="p-3 pt-0"><StepsBar /></div>
+            <div id="steps-bar" className="scroll-mt-3 p-3 pt-0"><StepsBar /></div>
           </>
         ) : sidebar === "Lab" ? (
           <div className="min-h-0 flex-1 p-3">

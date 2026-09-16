@@ -1,29 +1,53 @@
 "use client";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Box, DraftingCompass, MousePointerClick, Play, Ruler, ScanLine, Layers, FileOutput } from "lucide-react";
 import { useStore } from "@/store/useStore";
+import type { WorkspaceTab } from "@/store/useStore";
 import { EXAMPLES } from "@/lib/examples";
 import Footer from "@/components/ui/Footer";
 
 const HeroBackground = dynamic(() => import("./HeroBackground"), { ssr: false });
 
-const FEATURES = [
-  { icon: Box, title: "3D Visualization", desc: "True-scale solids seated on HP/VP with orbit, pan and preset cameras." },
-  { icon: ScanLine, title: "Orthographic Projection", desc: "Front, top and side views generated from the same 3D coordinates." },
-  { icon: Ruler, title: "Automatic Dimensions", desc: "⌀, heights, lengths and angles taken from the model — never typed." },
-  { icon: Layers, title: "Step-by-Step Construction", desc: "Animated XY → solid → projectors → final views procedure." },
-  { icon: MousePointerClick, title: "Interactive Projection Rays", desc: "Animate how each 3D vertex drops onto HP and VP." },
-  { icon: FileOutput, title: "Drawing Sheet + Export", desc: "A4-style sheet with title block, scale and PNG/SVG export." },
+type StorePatch = Partial<ReturnType<typeof useStore.getState>>;
+
+const FEATURES: { icon: typeof Box; title: string; desc: string; route: string; tab: WorkspaceTab; patch?: StorePatch }[] = [
+  { icon: Box, title: "3D Visualization", desc: "True-scale solids seated on HP/VP with orbit, pan and preset cameras.", route: "/visualizer", tab: "model" },
+  { icon: ScanLine, title: "Orthographic Projection", desc: "Front, top and side views generated from the same 3D coordinates.", route: "/visualizer/projection", tab: "projection" },
+  { icon: Ruler, title: "Automatic Dimensions", desc: "⌀, heights, lengths and angles taken from the model — never typed.", route: "/visualizer/dimensions", tab: "dimensions" },
+  { icon: Layers, title: "Step-by-Step Construction", desc: "Animated XY → solid → projectors → final views procedure.", route: "/visualizer/construction", tab: "construction" },
+  { icon: MousePointerClick, title: "Interactive Projection Rays", desc: "Animate how each 3D vertex drops onto HP and VP.", route: "/visualizer", tab: "model", patch: { showRays: true, showProjectors: true, splitMode: true } },
+  { icon: FileOutput, title: "Drawing Sheet + Export", desc: "A4-style sheet with title block, scale and SVG/DXF export.", route: "/visualizer/drawing", tab: "sheet" },
 ];
 
 const QUICK = ["cone-vp30", "cyl-vp", "prism-hp", "pyr-hp", "line-hp-vp", "plane-hp", "pent-40hp", "hex-3540", "rhombus-sq", "semi-vp", "cone-section", "cyl-hp"];
 
 export default function LandingPage() {
+  const router = useRouter();
   const question = useStore((s) => s.question);
   const setQuestion = useStore((s) => s.setQuestion);
   const generate = useStore((s) => s.generate);
   const loadExample = useStore((s) => s.loadExample);
+
+  /** Deep-link a feature: keep the user's model if one exists, else generate from their text. */
+  const goFeature = (route: string, tab: WorkspaceTab, patch?: StorePatch) => {
+    const st = useStore.getState();
+    if (!st.solid) st.generate();
+    st.set({ screen: "workspace", sidebar: "Visualizer", wtab: tab, ...patch });
+    router.push(route);
+  };
+
+  const openVisualizer = () => {
+    const st = useStore.getState();
+    if (!st.solid) st.generate();
+    st.set({ screen: "workspace", sidebar: "Visualizer", wtab: "model" });
+    router.push("/visualizer");
+  };
+
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#05070d]">
@@ -42,7 +66,7 @@ export default function LandingPage() {
         <div className="hidden items-center gap-2 text-sm text-slate-400 md:flex">
           <span className="rounded-full border border-white/10 px-3 py-1 font-mono text-[11px]">First-angle • mm • XY</span>
           <button
-            onClick={() => loadExample("cone-vp30")}
+            onClick={openVisualizer}
             className="rounded-full bg-cyan-400 px-4 py-1.5 font-semibold text-slate-950 hover:bg-cyan-300"
           >
             Open Visualizer
@@ -74,6 +98,7 @@ export default function LandingPage() {
             Describe your Engineering Drawing question
           </label>
           <textarea
+            id="problem-input"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             rows={3}
@@ -82,13 +107,13 @@ export default function LandingPage() {
           />
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
-              onClick={() => generate()}
+              onClick={() => { generate(); router.push("/visualizer"); }}
               className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-5 py-2.5 font-semibold text-slate-950 hover:bg-cyan-300"
             >
               Generate Visualization <ArrowRight size={16} />
             </button>
             <button
-              onClick={() => loadExample("cone-vp30")}
+              onClick={() => { loadExample("cone-vp30"); router.push("/visualizer"); }}
               className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-5 py-2.5 text-slate-200 hover:border-cyan-300/40 hover:text-cyan-200"
             >
               <Play size={15} /> Try Example
@@ -97,29 +122,41 @@ export default function LandingPage() {
           </div>
         </motion.div>
 
-        <div className="mt-6 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+        <div id="examples" className="mt-6 grid scroll-mt-6 grid-cols-2 gap-2.5 md:grid-cols-4">
           {QUICK.map((id) => {
             const ex = EXAMPLES.find((e) => e.id === id)!;
             return (
               <button
                 key={id}
-                onClick={() => loadExample(id)}
-                className="glass group rounded-xl p-3.5 text-left transition hover:border-cyan-300/40"
+                onClick={() => { loadExample(id); router.push("/visualizer"); }}
+                className="glass group cursor-pointer rounded-xl p-3.5 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/50 hover:bg-cyan-300/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
               >
                 <div className="font-mono text-[10px] uppercase tracking-widest text-cyan-300/80">{ex.tag}</div>
                 <div className="mt-1 text-sm font-semibold text-slate-100 group-hover:text-cyan-100">{ex.title}</div>
+                <div className="mt-1.5 font-mono text-[10px] text-slate-500 opacity-0 transition group-hover:text-cyan-300 group-hover:opacity-100 group-focus-visible:opacity-100">
+                  Try Example →
+                </div>
               </button>
             );
           })}
         </div>
 
-        <div className="mt-12 grid gap-3 md:grid-cols-3">
+        <div id="features" className="mt-12 grid scroll-mt-6 gap-3 md:grid-cols-3">
           {FEATURES.map((f) => (
-            <div key={f.title} className="glass rounded-2xl p-5">
+            <motion.button
+              key={f.title}
+              onClick={() => goFeature(f.route, f.tab, f.patch)}
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.98 }}
+              className="glass cursor-pointer rounded-2xl p-5 text-left transition hover:border-cyan-300/50 hover:bg-cyan-300/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+            >
               <f.icon size={20} className="text-cyan-300" />
               <div className="mt-3 font-semibold">{f.title}</div>
               <div className="mt-1 text-sm leading-relaxed text-slate-400">{f.desc}</div>
-            </div>
+              <div className="mt-3 font-mono text-[11px] text-slate-500 transition group-hover:text-cyan-300">
+                <span className="inline-flex items-center gap-1 text-cyan-300/80">Explore <ArrowRight size={12} /></span>
+              </div>
+            </motion.button>
           ))}
         </div>
 
@@ -130,10 +167,10 @@ export default function LandingPage() {
             Every view — 3D mesh, SVG projection, dimension — comes from one shared geometry kernel.
           </p>
           <div className="mt-4 flex gap-2">
-            <button onClick={() => generate()} className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-950">
+            <button onClick={() => { scrollTo("problem-input"); document.getElementById("problem-input")?.focus({ preventScroll: true }); }} className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-950">
               Visualize a Problem
             </button>
-            <button onClick={() => loadExample("cone-hp")} className="rounded-xl border border-white/15 px-5 py-2.5 text-sm text-slate-200">
+            <button onClick={() => scrollTo("examples")} className="rounded-xl border border-white/15 px-5 py-2.5 text-sm text-slate-200">
               Explore Examples
             </button>
           </div>

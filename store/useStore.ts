@@ -7,6 +7,7 @@ import { EXAMPLES } from "@/lib/examples";
 
 export type Screen = "landing" | "workspace";
 export type Scale = "1:1" | "1:2" | "1:5" | "1:10" | "2:1";
+export type WorkspaceTab = "model" | "projection" | "construction" | "dimensions" | "sheet" | "export";
 
 interface State {
   screen: Screen;
@@ -24,7 +25,7 @@ interface State {
   showProjectors: boolean;
   showTraces: boolean;
   projectionMethod: ProjectionMethod;
-  centerMode: "3d" | "2d";
+  wtab: WorkspaceTab;
   studentMode: boolean;
   showHP: boolean;
   showVP: boolean;
@@ -83,7 +84,7 @@ export const useStore = create<State>((set, get) => ({
   showProjectors: true,
   showTraces: true,
   projectionMethod: "first",
-  centerMode: "3d",
+  wtab: "model",
   studentMode: true,
   showHP: true,
   showVP: true,

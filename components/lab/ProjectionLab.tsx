@@ -145,7 +145,7 @@ export default function ProjectionLab() {
             </button>
           )}
           <span className="mx-1 h-5 w-px bg-white/10" />
-          <button onClick={() => set({ centerMode: "2d", sidebar: "Visualizer" })} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[12px] font-bold text-slate-950">
+          <button onClick={() => set({ wtab: "projection", sidebar: "Visualizer" })} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[12px] font-bold text-slate-950">
             <Boxes size={13} /> 3D → 2D sheet
           </button>
           <button onClick={() => downloadSVG("lab-canvas", `geodraft-${solid.kind}-projection.svg`)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-[12px] text-slate-200">
