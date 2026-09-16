@@ -1,10 +1,14 @@
 "use client";
 import { useState } from "react";
-import { Pencil, Check, AlertTriangle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Pencil, Check, AlertTriangle, Sparkles } from "lucide-react";
 import { useStore } from "@/store/useStore";
+import { useTutor } from "@/components/tutor/TutorContext";
 import type { ParsedQuestion } from "@/types";
 
 export default function QuestionPanel() {
+  const router = useRouter();
+  const { explainCurrent } = useTutor();
   const question = useStore((s) => s.question);
   const parsed = useStore((s) => s.parsed);
   const solid = useStore((s) => s.solid);
@@ -125,8 +129,32 @@ export default function QuestionPanel() {
         </div>
       )}
 
-      <div className="mt-auto pt-3 font-mono text-[11px] text-slate-500">
-        confidence {parsed.confidence}% • {solid?.kind} kernel • mm internal
+      <div className="mt-auto pt-3">
+        {solid && (
+          <div className="mb-2 rounded-xl border border-cyan-300/20 bg-cyan-300/5 p-2.5">
+            <div className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-widest text-cyan-200">
+              <Sparkles size={11} /> GeoDraft understood — ask why
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {([
+                ["geometry", "Explain Geometry", "/visualizer"],
+                ["projection", "Explain Projection", "/visualizer/projection"],
+                ["construction", "Explain Construction", "/visualizer/construction"],
+              ] as const).map(([kind, label, route]) => (
+                <button
+                  key={kind}
+                  onClick={() => { explainCurrent(kind); router.push(route); }}
+                  className="pressable rounded-lg border border-cyan-300/30 px-2 py-1 text-[11.5px] font-bold text-cyan-100 hover:bg-cyan-300/10"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="font-mono text-[11px] text-slate-500">
+          confidence {parsed.confidence}% • {solid?.kind} kernel • mm internal
+        </div>
       </div>
     </div>
   );

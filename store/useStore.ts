@@ -24,6 +24,8 @@ interface State {
   showDims: boolean;
   showProjectors: boolean;
   showTraces: boolean;
+  ortho3d: boolean;
+  isolate3d: boolean;
   projectionMethod: ProjectionMethod;
   wtab: WorkspaceTab;
   studentMode: boolean;
@@ -83,6 +85,8 @@ export const useStore = create<State>((set, get) => ({
   showDims: true,
   showProjectors: true,
   showTraces: true,
+  ortho3d: false,
+  isolate3d: false,
   projectionMethod: "first",
   wtab: "model",
   studentMode: true,

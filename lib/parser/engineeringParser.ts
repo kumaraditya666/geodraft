@@ -387,7 +387,7 @@ function trim(n: number): string {
   return `${Math.round(n * 100) / 100}`;
 }
 
-/** Build human construction steps from parsed + solid kind */
+/** Build the 8-stage construction timeline from the parsed problem (problem-specific). */
 export function buildSteps(parsed: ParsedQuestion): { title: string; detail: string; student: string }[] {
   const dimStr = Object.entries(parsed.dimensions)
     .map(([k, v]) => `${k} ${v} mm`)
@@ -396,41 +396,57 @@ export function buildSteps(parsed: ParsedQuestion): { title: string; detail: str
     parsed.inclinations.HP !== undefined || parsed.inclinations.VP !== undefined
       ? ` Inclined ${parsed.inclinations.HP !== undefined ? `${parsed.inclinations.HP}° to HP` : ""}${parsed.inclinations.HP !== undefined && parsed.inclinations.VP !== undefined ? " and " : ""}${parsed.inclinations.VP !== undefined ? `${parsed.inclinations.VP}° to VP` : ""}.`
       : "";
-  const base: { title: string; detail: string; student: string }[] = [
+  const shapeName = parsed.solid === "plane" ? `${parsed.planeShape ?? "lamina"}` : cap(parsed.solid);
+  const trueShape =
+    parsed.solid === "plane"
+      ? `True shape: ${shapeName} (${dimStr || "see dimensions"}) drawn undistorted.`
+      : `True parameters: ${dimStr}.`;
+  return [
     {
-      title: "Draw the XY reference line",
-      detail: "XY is the intersection of HP (z=0) and VP (y=0). Front view goes above XY, top view below (first-angle).",
-      student: "Think of XY as the fold between the floor (HP) and the wall (VP). Everything above it is what you see from the front; below is what you see from above.",
+      title: "Interpret Problem",
+      detail: `Read as: ${shapeName} (${dimStr || "dimensions as stated"}) resting on ${parsed.restingPlane ?? "HP"}.${angStr} Confidence ${parsed.confidence}%.`,
+      student: `The question asks for a ${shapeName}. We pull out its sizes and how it sits — that is everything the drawing needs.`,
     },
     {
-      title: "Place the solid in 3D",
-      detail: `${cap(parsed.solid)} (${dimStr}) resting on ${parsed.restingPlane}.${angStr} Lowest point touches ${parsed.restingPlane} (z=0 / y=0). Axis direction solved with direction cosines.`,
-      student: `We put the ${parsed.solid} so it just touches the floor. Its long direction (axis) is tilted exactly as the question says — that tilt is what changes the drawings.`,
+      title: "Establish Reference",
+      detail: "Draw the XY line — the fold where HP (z=0, floor) meets VP (y=0, wall). First-angle: front above XY, top below.",
+      student: "XY is the fold between floor and wall. Front picture goes above it, top picture below.",
     },
     {
-      title: "Draw the initial projection",
-      detail: "Project every 3D vertex: Front=(x,z), Top=(x,−y), Side=(−y,z). Join edges; faces pointing away become dashed hidden lines.",
-      student: "To draw the front view, ignore how deep each point is and keep left-right + height. For the top view, ignore height and keep left-right + depth.",
+      title: "Create True Shape",
+      detail: trueShape,
+      student: "First draw the shape exactly as it measures — no squashing yet. Every later view is derived from this.",
     },
     {
-      title: "Apply inclination",
+      title: "Apply Inclination",
       detail: parsed.inclinations.VP !== undefined && parsed.inclinations.HP === undefined && parsed.restingPlane === "HP"
-        ? `Axis kept parallel to HP and rotated ${parsed.inclinations.VP}° toward VP (sin αVP = |dy|). Lateral generator now contacts HP — recompute min-Z shift.`
-        : "Rotate the axis with the specified HP/VP angles, then re-seat the solid so contact with the resting plane is preserved.",
-      student: "Tilting the solid moves which edges you can see. Edges on the far side turn dashed — that is why hidden lines appear.",
+        ? `Axis kept parallel to HP and rotated ${parsed.inclinations.VP}° toward VP (sin αVP = |dy|). Lowest generator re-seated on HP.`
+        : parsed.inclinations.HP !== undefined || parsed.inclinations.VP !== undefined
+          ? `Rotate with the specified HP/VP angles, then re-seat so contact with ${parsed.restingPlane ?? "HP"} is preserved.${angStr}`
+          : `No inclination stated — initial position on ${parsed.restingPlane ?? "HP"} is the final orientation.`,
+      student: "Tilting moves which edges you can see. Far-side edges turn dashed — that is why hidden lines appear.",
     },
     {
-      title: "Drop projector lines",
-      detail: "From each vertex, draw thin projectors perpendicular to XY into the other view. Front↔Top projectors are vertical and meet at XY.",
-      student: "Projectors are like sun-rays: each 3D corner casts one ray straight into the front wall and one straight down to the floor. Where rays land is where you draw the point.",
+      title: "Project Points",
+      detail: "From each 3D vertex drop projectors: vertical front↔top across XY (shared X), horizontal toward the side (shared Z).",
+      student: "Projectors are sun-rays: each corner casts one ray at the wall and one at the floor. Where rays land is where you draw.",
     },
     {
-      title: "Complete final views + dimensions",
-      detail: "Darken visible outlines, dash hidden edges, add center lines, then dimension true sizes (⌀, height, angles) from the 3D source — never hand-typed.",
-      student: "Thick lines are edges you can really see. Dashed lines are hidden behind the solid. Dimensions always come from the real 3D size.",
+      title: "Generate Views",
+      detail: "Front=(x,z) on VP, Top=(x,−y) on HP, Side=(−y,z). Visible outlines solid; faces pointing away become dashed hidden lines; axes get chain center lines.",
+      student: "Front ignores depth, top ignores height, side ignores width. Thick = visible, dashed = hidden.",
+    },
+    {
+      title: "Add Dimensions",
+      detail: "Dimension true sizes from the 3D source — never hand-typed, never the foreshortened drawing length.",
+      student: "Numbers always quote the real 3D size, even where the drawing looks squashed.",
+    },
+    {
+      title: "Final Drawing",
+      detail: "Arrange per first/third-angle convention with XY, title block, scale and units — ready for SVG/DXF export.",
+      student: "Tidy sheet, correct view positions, exportable vectors. Done.",
     },
   ];
-  return base;
 }
 
 function cap(s: string): string {

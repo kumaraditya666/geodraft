@@ -1,14 +1,18 @@
 "use client";
-import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, Box, DraftingCompass, MousePointerClick, Play, Ruler, ScanLine, Layers, FileOutput } from "lucide-react";
+import { ArrowRight, Box, DraftingCompass, GraduationCap, MousePointerClick, Play, Ruler, ScanLine, Layers, FileOutput, Terminal } from "lucide-react";
 import { useStore } from "@/store/useStore";
+import { useTutor } from "@/components/tutor/TutorContext";
 import type { WorkspaceTab } from "@/store/useStore";
 import { EXAMPLES } from "@/lib/examples";
 import Footer from "@/components/ui/Footer";
-
-const HeroBackground = dynamic(() => import("./HeroBackground"), { ssr: false });
+import HeroScene from "./HeroScene";
+import ExampleCard from "./ExampleCard";
+import FeaturePreview from "./FeaturePreview";
+import { buildProjection } from "@/lib/projection/projectionEngine";
+import { measuredAngles } from "@/lib/projection/angleEngine";
 
 type StorePatch = Partial<ReturnType<typeof useStore.getState>>;
 
@@ -25,6 +29,7 @@ const QUICK = ["cone-vp30", "cyl-vp", "prism-hp", "pyr-hp", "line-hp-vp", "plane
 
 export default function LandingPage() {
   const router = useRouter();
+  const { startTour } = useTutor();
   const question = useStore((s) => s.question);
   const setQuestion = useStore((s) => s.setQuestion);
   const generate = useStore((s) => s.generate);
@@ -49,10 +54,65 @@ export default function LandingPage() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // staged generation overlay: real work runs first, then stages narrate verified artifacts
+  const [stages, setStages] = useState<{ label: string; detail: string }[] | null>(null);
+  const [stageIdx, setStageIdx] = useState(0);
+
+  useEffect(() => {
+    if (!stages) return;
+    if (stageIdx >= stages.length) {
+      const t = setTimeout(() => {
+        setStages(null);
+        setStageIdx(0);
+        router.push("/visualizer");
+      }, 350);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => setStageIdx((i) => i + 1), 300);
+    return () => clearTimeout(t);
+  }, [stages, stageIdx, router]);
+
+  const runGenerate = () => {
+    if (stages) return;
+    const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    generate();
+    if (reduced) {
+      router.push("/visualizer");
+      return;
+    }
+    const st = useStore.getState();
+    const solid = st.solid;
+    const parsed = st.parsed;
+    if (!solid || !parsed) {
+      router.push("/visualizer");
+      return;
+    }
+    const dims = Object.entries(parsed.dimensions)
+      .map(([k, v]) => `${k} ${v}`)
+      .join(" · ");
+    const m = measuredAngles(solid.axisDir);
+    const tiltTxt =
+      parsed.inclinations.HP !== undefined || parsed.inclinations.VP !== undefined
+        ? `measured ${m.withHP.toFixed(1)}° HP / ${m.withVP.toFixed(1)}° VP`
+        : "seated on " + (parsed.restingPlane ?? "HP");
+    const nf = buildProjection(solid, "front").segments.length;
+    const nt = buildProjection(solid, "top").segments.length;
+    const ns = buildProjection(solid, "side").segments.length;
+    setStageIdx(0);
+    setStages([
+      { label: "PARSING PROBLEM", detail: `Detected ${solid.kind} · confidence ${parsed.confidence}%` },
+      { label: "EXTRACTING DIMENSIONS", detail: dims ? `${dims} mm` : "true shape defaults" },
+      { label: "BUILDING GEOMETRY", detail: `${solid.vertices.length} vertices · ${solid.edges.length} edges` },
+      { label: "SOLVING ORIENTATION", detail: tiltTxt },
+      { label: "PROJECTING TO HP / VP", detail: `front ${nf} · top ${nt} · side ${ns} segments` },
+      { label: "GENERATING VIEWS", detail: "Front + Top + Side ready" },
+    ]);
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#05070d]">
       <div className="ed-grid-bg absolute inset-0" />
-      <HeroBackground />
+      <HeroScene />
 
       <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <div className="flex items-center gap-2.5">
@@ -81,9 +141,12 @@ export default function LandingPage() {
             AI Engineering Drawing & Orthographic Visualizer
           </div>
           <h1 className="font-display mt-5 max-w-3xl text-5xl font-bold leading-[1.02] tracking-tight md:text-7xl">
-            Turn Engineering Drawing Questions <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-fuchsia-400 bg-clip-text text-transparent">Into 3D.</span>
+            Turn Engineering Problems <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-fuchsia-400 bg-clip-text text-transparent">Into Geometry.</span>
           </h1>
-          <p className="mt-5 max-w-2xl text-lg text-slate-400">
+          <p className="font-display mt-4 max-w-2xl text-xl font-semibold tracking-wide text-slate-200">
+            Understand. Visualize. Project.
+          </p>
+          <p className="mt-2 max-w-2xl text-[15px] text-slate-400">
             Describe a solid. See its 3D orientation, orthographic projections, dimensions and construction steps.
           </p>
         </motion.div>
@@ -92,10 +155,12 @@ export default function LandingPage() {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.12 }}
-          className="glass glow-border mt-8 rounded-2xl p-4 md:p-5"
+          data-tour="question-input"
+          className="glass glow-border console-box relative mt-8 overflow-hidden rounded-2xl p-4 md:p-5"
         >
-          <label className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">
-            Describe your Engineering Drawing question
+          <div className="console-scan pointer-events-none absolute left-4 right-4 h-px bg-cyan-300/60" />
+          <label className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">
+            <Terminal size={12} className="text-cyan-300" /> Describe your engineering drawing problem...
           </label>
           <textarea
             id="problem-input"
@@ -105,10 +170,27 @@ export default function LandingPage() {
             className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/40 p-4 text-[15px] leading-relaxed text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-300/50"
             placeholder="A cone of base diameter 50 mm and height 70 mm rests on HP. Its axis makes 30° with VP. Draw its orthographic projections."
           />
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-[10.5px] text-slate-500">Try:</span>
+            {[
+              "Hexagonal plate of side 40 mm resting on a corner in VP, surface 30° to VP.",
+              "Cone ⌀50 mm, height 70 mm, axis 30° to VP.",
+              "Square lamina 50 mm, corner on HP, sides parallel to VP.",
+            ].map((s) => (
+              <button
+                key={s}
+                onClick={() => setQuestion(s)}
+                className="rounded-full border border-white/10 bg-black/30 px-2.5 py-1 font-mono text-[10.5px] text-slate-400 transition hover:border-cyan-300/40 hover:text-cyan-200"
+              >
+                “{s}”
+              </button>
+            ))}
+          </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
-              onClick={() => { generate(); router.push("/visualizer"); }}
-              className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-5 py-2.5 font-semibold text-slate-950 hover:bg-cyan-300"
+              data-tour="generate-button"
+              onClick={runGenerate}
+              className="pressable inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-5 py-2.5 font-semibold text-slate-950 hover:bg-cyan-300"
             >
               Generate Visualization <ArrowRight size={16} />
             </button>
@@ -122,22 +204,10 @@ export default function LandingPage() {
           </div>
         </motion.div>
 
-        <div id="examples" className="mt-6 grid scroll-mt-6 grid-cols-2 gap-2.5 md:grid-cols-4">
+        <div id="examples" data-tour="examples" className="mt-6 grid scroll-mt-6 grid-cols-2 gap-2.5 md:grid-cols-4">
           {QUICK.map((id) => {
             const ex = EXAMPLES.find((e) => e.id === id)!;
-            return (
-              <button
-                key={id}
-                onClick={() => { loadExample(id); router.push("/visualizer"); }}
-                className="glass group cursor-pointer rounded-xl p-3.5 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/50 hover:bg-cyan-300/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-              >
-                <div className="font-mono text-[10px] uppercase tracking-widest text-cyan-300/80">{ex.tag}</div>
-                <div className="mt-1 text-sm font-semibold text-slate-100 group-hover:text-cyan-100">{ex.title}</div>
-                <div className="mt-1.5 font-mono text-[10px] text-slate-500 opacity-0 transition group-hover:text-cyan-300 group-hover:opacity-100 group-focus-visible:opacity-100">
-                  Try Example →
-                </div>
-              </button>
-            );
+            return <ExampleCard key={id} ex={ex} onOpen={(eid) => { loadExample(eid); router.push("/visualizer"); }} />;
           })}
         </div>
 
@@ -148,16 +218,34 @@ export default function LandingPage() {
               onClick={() => goFeature(f.route, f.tab, f.patch)}
               whileHover={{ y: -3 }}
               whileTap={{ scale: 0.98 }}
-              className="glass cursor-pointer rounded-2xl p-5 text-left transition hover:border-cyan-300/50 hover:bg-cyan-300/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+              className="glass pressable cursor-pointer rounded-2xl p-5 text-left transition hover:border-cyan-300/50 hover:bg-cyan-300/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
             >
-              <f.icon size={20} className="text-cyan-300" />
-              <div className="mt-3 font-semibold">{f.title}</div>
+              <FeaturePreview kind={f.title} />
+              <div className="mt-2 flex items-center gap-2">
+                <f.icon size={17} className="text-cyan-300" />
+                <div className="font-semibold">{f.title}</div>
+              </div>
               <div className="mt-1 text-sm leading-relaxed text-slate-400">{f.desc}</div>
               <div className="mt-3 font-mono text-[11px] text-slate-500 transition group-hover:text-cyan-300">
                 <span className="inline-flex items-center gap-1 text-cyan-300/80">Explore <ArrowRight size={12} /></span>
               </div>
             </motion.button>
           ))}
+        </div>
+
+        <div className="glass mt-8 flex flex-col items-start gap-3 rounded-2xl p-6 sm:flex-row sm:items-center">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-cyan-400/15 text-cyan-300 glow-border">
+            <GraduationCap size={22} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-display text-lg font-bold">Learn GeoDraft in 60 seconds</div>
+            <p className="mt-0.5 text-sm text-slate-400">
+              A guided tour across the real app — question box, 3D model, projections, construction, dimensions and export.
+            </p>
+          </div>
+          <button onClick={() => startTour(0)} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-cyan-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-cyan-300">
+            Start Tour <ArrowRight size={15} />
+          </button>
         </div>
 
         <div className="glass mt-8 rounded-2xl p-6">
@@ -177,6 +265,27 @@ export default function LandingPage() {
         </div>
       </main>
       <Footer />
+      {stages && (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => { setStages(null); setStageIdx(0); router.push("/visualizer"); }}>
+          <div className="glass glow-border w-full max-w-md rounded-2xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-cyan-300">Generating — real pipeline stages</div>
+            <div className="mt-3 space-y-2">
+              {stages.map((s, i) => (
+                <div key={s.label} className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 transition ${i < stageIdx ? "border-emerald-300/30 bg-emerald-300/5" : i === stageIdx ? "border-cyan-300/50 bg-cyan-300/10" : "border-white/5 opacity-40"}`}>
+                  <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full font-mono text-[10px] font-bold ${i < stageIdx ? "bg-emerald-300 text-slate-950" : i === stageIdx ? "animate-pulse bg-cyan-400 text-slate-950" : "border border-white/20 text-slate-500"}`}>
+                    {i < stageIdx ? "✓" : i + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-mono text-[11px] font-bold tracking-wider">{s.label}</div>
+                    {(i <= stageIdx) && <div className="truncate font-mono text-[10.5px] text-slate-400">{s.detail}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 text-center font-mono text-[10px] text-slate-500">click anywhere to skip →</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

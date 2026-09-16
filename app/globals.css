@@ -46,6 +46,153 @@ svg text {
   stroke-dasharray: 7 6;
   animation: lab-march 0.4s linear infinite;
 }
+@keyframes tutor-ring-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.9), 0 0 24px rgba(34, 211, 238, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 1), 0 0 40px rgba(34, 211, 238, 0.7);
+  }
+}
+.tour-ring {
+  border: 2px solid #22d3ee;
+  animation: tutor-ring-pulse 1.6s ease-in-out infinite;
+}
+
+/* hero projection loop (12s decorative cycle) */
+@keyframes hero-dot {
+  0%, 8% { opacity: 0; }
+  12%, 88% { opacity: 1; }
+  94%, 100% { opacity: 0; }
+}
+@keyframes hero-ray1 {
+  0%, 18% { opacity: 0; }
+  24%, 88% { opacity: 1; }
+  94%, 100% { opacity: 0; }
+}
+@keyframes hero-front {
+  0%, 30% { opacity: 0; }
+  36%, 88% { opacity: 1; }
+  94%, 100% { opacity: 0; }
+}
+@keyframes hero-ray2 {
+  0%, 44% { opacity: 0; }
+  50%, 88% { opacity: 1; }
+  94%, 100% { opacity: 0; }
+}
+@keyframes hero-top {
+  0%, 58% { opacity: 0; }
+  64%, 88% { opacity: 1; }
+  94%, 100% { opacity: 0; }
+}
+.hero-loop-dot { animation: hero-dot 12s ease-in-out infinite; }
+.hero-loop-ray1 { animation: hero-ray1 12s ease-in-out infinite; }
+.hero-loop-front { animation: hero-front 12s ease-in-out infinite; }
+.hero-loop-ray2 { animation: hero-ray2 12s ease-in-out infinite; }
+.hero-loop-top { animation: hero-top 12s ease-in-out infinite; }
+@keyframes hero-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(14px, -10px); }
+}
+.hero-drift { animation: hero-drift 14s ease-in-out infinite; }
+.hero-drift2 { animation: hero-drift 18s ease-in-out infinite reverse; }
+
+/* console scanline + focus treatment */
+.console-scan {
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.console-box:focus-within .console-scan {
+  opacity: 1;
+  animation: console-scan-move 2.6s linear infinite;
+}
+@keyframes console-scan-move {
+  0% { top: 8%; }
+  50% { top: 90%; }
+  100% { top: 8%; }
+}
+.console-box {
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.console-box:focus-within {
+  transform: scale(1.008);
+  border-color: rgba(34, 211, 238, 0.45);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.25), 0 8px 44px rgba(34, 211, 238, 0.1);
+}
+
+/* draw-on for projections + dims */
+@keyframes draw-on {
+  from { stroke-dashoffset: var(--draw-len, 120); opacity: 0; }
+  to { stroke-dashoffset: 0; opacity: 1; }
+}
+.draw-on {
+  stroke-dasharray: var(--draw-len, 120);
+  animation: draw-on 1.1s ease-out both;
+}
+
+/* pressable micro-interaction */
+.pressable {
+  transition: transform 0.12s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+.pressable:active {
+  transform: scale(0.97);
+}
+@keyframes card-sweep {
+  0% { left: 4%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { left: 96%; opacity: 0; }
+}
+@keyframes feat-spin {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
+}
+.feat-spin {
+  animation: feat-spin 7s linear infinite;
+  transform-box: fill-box;
+}
+@keyframes feat-dim {
+  0%, 100% { transform: scaleX(0.86); }
+  50% { transform: scaleX(1); }
+}
+.feat-dim {
+  animation: feat-dim 3.2s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes feat-drop {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50% { transform: translateY(30px); opacity: 0.4; }
+}
+.feat-drop {
+  animation: feat-drop 2.6s ease-in-out infinite;
+}
+@keyframes feat-drop-dot {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.feat-drop-dot {
+  animation: feat-drop-dot 2.6s ease-in-out infinite;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 @keyframes lab-sweep {
   0% {
     transform: translateX(-60px);

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/react";
+import { TutorProvider } from "@/components/tutor/TutorContext";
+import { TutorMount } from "@/components/tutor/TutorPanel";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-screen bg-ink antialiased">
-        {children}
+        <TutorProvider>
+          {children}
+          <TutorMount />
+        </TutorProvider>
         <Analytics />
       </body>
     </html>

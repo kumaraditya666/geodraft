@@ -141,6 +141,7 @@ function SolidMesh({ solid }: { solid: BuiltSolid }) {
 function Overlays({ solid }: { solid: BuiltSolid }) {
   const showLabels = useStore((s) => s.showLabels);
   const showRays = useStore((s) => s.showRays);
+  const isolate = useStore((s) => s.isolate3d);
   const selectedPoint = useStore((s) => s.selectedPoint);
   const set = useStore((s) => s.set);
   const stepIndex = useStore((s) => s.stepIndex);
@@ -153,7 +154,7 @@ function Overlays({ solid }: { solid: BuiltSolid }) {
     return [...pri, ...ring];
   }, [solid]);
 
-  const raysOn = showRays && stepIndex >= 3;
+  const raysOn = showRays && stepIndex >= 3 && !isolate;
 
   return (
     <group>
@@ -205,6 +206,8 @@ function Overlays({ solid }: { solid: BuiltSolid }) {
 }
 
 function HeightDimension({ solid }: { solid: BuiltSolid }) {
+  const isolate = useStore((s) => s.isolate3d);
+  if (isolate) return null;
   if (solid.height === undefined || solid.kind === "line" || solid.kind === "plane" || solid.kind === "sphere") return null;
   const min = solid.bbox.min;
   const max = solid.bbox.max;
@@ -231,12 +234,22 @@ function HeightDimension({ solid }: { solid: BuiltSolid }) {
  */
 function AngleGizmo({ solid }: { solid: BuiltSolid }) {
   const showAngles = useStore((s) => s.showAngles);
+  const set = useStore((s) => s.set);
+  const selectedPoint = useStore((s) => s.selectedPoint);
   const inc = solid.parsed.inclinations;
   const hasInc = inc.HP !== undefined || inc.VP !== undefined;
   if (!showAngles || !hasInc) return null;
 
   const m = measuredAngles(solid.axisDir);
   const tip = solid.apex ?? solid.topCenter ?? solid.vertices[1]?.p ?? solid.baseCenter;
+  const tipId = solid.vertices.some((v) => v.id === "apex")
+    ? "apex"
+    : solid.vertices.some((v) => v.id === "top-center")
+      ? "top-center"
+      : null;
+  const pingTip = () => {
+    if (tipId) set({ selectedPoint: selectedPoint === tipId ? null : tipId });
+  };
   const c = engToScene(solid.baseCenter);
   const t3 = engToScene(tip);
   const r = 1.05;
@@ -295,7 +308,7 @@ function AngleGizmo({ solid }: { solid: BuiltSolid }) {
           <Line points={[[c[0], 0.03, c[2]], vpEnd]} color="#f472b6" lineWidth={1.6} />
           <Line points={vpPts} color="#f472b6" lineWidth={1.8} />
           <Html position={[c[0] + Math.cos(azim / 2) * (r + 0.42), 0.14, c[2] + Math.sin(azim / 2) * (r + 0.42)]} center distanceFactor={10}>
-            <div className="whitespace-nowrap rounded bg-pink-400 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-950">
+            <div onClick={pingTip} title="Highlight the inclined axis in 3D + 2D" className="cursor-pointer whitespace-nowrap rounded bg-pink-400 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-950">
               {m.withVP.toFixed(1)}° VP (spec {inc.VP}°)
             </div>
           </Html>
@@ -312,7 +325,7 @@ function AngleGizmo({ solid }: { solid: BuiltSolid }) {
             ]}
             center distanceFactor={10}
           >
-            <div className="whitespace-nowrap rounded bg-green-400 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-950">
+            <div onClick={pingTip} title="Highlight the inclined axis in 3D + 2D" className="cursor-pointer whitespace-nowrap rounded bg-green-400 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-950">
               {m.withHP.toFixed(1)}° HP (spec {inc.HP}°)
             </div>
           </Html>
@@ -370,16 +383,23 @@ function ReferencePlanes({ solid }: { solid: BuiltSolid | null }) {
 
 export default function Viewer3D() {
   const solid = useStore((s) => s.solid);
+  const ortho = useStore((s) => s.ortho3d);
+  const isolate = useStore((s) => s.isolate3d);
   const controlsRef = useRef<OrbitControlsImpl>(null);
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-[#070c16]">
-      <Canvas camera={{ position: [5.2, 4.4, 6.4], fov: 40 }} dpr={[1, 2]}>
+      <Canvas
+        key={ortho ? "ortho" : "persp"}
+        orthographic={ortho}
+        camera={ortho ? { position: [5.2, 4.4, 6.4], zoom: 90 } : { position: [5.2, 4.4, 6.4], fov: 40 }}
+        dpr={[1, 2]}
+      >
         <color attach="background" args={["#070c16"]} />
         <ambientLight intensity={1.15} />
         <directionalLight position={[6, 9, 6]} intensity={1.9} />
         <directionalLight position={[-5, 4, -6]} intensity={0.45} color="#818cf8" />
-        <ReferencePlanes solid={solid} />
+        {!isolate && <ReferencePlanes solid={solid} />}
         {solid && (
           <group>
             <SolidMesh solid={solid} />

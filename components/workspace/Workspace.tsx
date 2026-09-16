@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import {
   DraftingCompass, Plus, LayoutGrid, HelpCircle, Save, FolderOpen, GraduationCap,
   Settings2, Home, Eye, MessageSquareText, FileImage, SplitSquareHorizontal, Tag, PencilRuler,
-  Download, Printer, Box, ScanLine, Ruler, Layers, FileOutput,
+  Download, Printer, Box, ScanLine, Ruler, Layers, FileOutput, Zap,
 } from "lucide-react";
 import { useStore } from "@/store/useStore";
 import type { WorkspaceTab } from "@/store/useStore";
@@ -21,13 +21,14 @@ import ProjectionLab from "@/components/lab/ProjectionLab";
 import Footer from "@/components/ui/Footer";
 import LabViewsSVG from "@/components/lab/LabViewsSVG";
 import DimensionList from "@/components/dimensions/DimensionList";
+import ModelInspector from "@/components/inspector/ModelInspector";
 import { buildDXF } from "@/lib/projection/dxfExporter";
 import { downloadSVG, downloadText, printSheet } from "@/lib/projection/svgExporter";
 import type { ProjectionMethod } from "@/types";
 
 const Viewer3D = dynamic(() => import("@/components/viewer3d/Viewer3D"), { ssr: false });
 
-type ViewTab = "front" | "top" | "side" | "all";
+type ViewTab = "front" | "top" | "side" | "all" | "model";
 
 const WTABS: { k: WorkspaceTab; label: string; slug: string; icon: typeof Box }[] = [
   { k: "model", label: "3D Model", slug: "/visualizer", icon: Box },
@@ -90,7 +91,8 @@ export default function Workspace() {
 
   const explainView = () => {
     if (!solid) return;
-    const v = tab === "all" ? "front + top (first-angle)" : tab;
+    const vt = tab === "model" ? "all" : tab;
+    const v = vt === "all" ? "front + top (first-angle)" : vt;
     const hiddenNote =
       solid.kind === "cone" || solid.kind === "cylinder"
         ? "The far half of the base rim is dashed because it sits behind the solid from this viewpoint — face normals point away from the observer, so the projection engine marks those rim segments hidden."
@@ -200,6 +202,15 @@ export default function Workspace() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {(wtab === "model" || wtab === "construction" || wtab === "dimensions") && <CameraBar />}
+                  {(wtab === "model" || wtab === "construction") && (
+                    <button
+                      onClick={() => { set({ showRays: true, showProjectors: true }); goTab("projection"); }}
+                      title="Animate every projector from 3D into the 2D views"
+                      className="pressable inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-400 to-fuchsia-400 px-3 py-1.5 font-mono text-[11px] font-bold uppercase text-slate-950"
+                    >
+                      <Zap size={12} /> Project All
+                    </button>
+                  )}
                   <div className="ml-auto flex flex-wrap items-center gap-1.5 text-[11px]">
                     <Toggle on={showHP} label="HP" onClick={() => set({ showHP: !showHP })} />
                     <Toggle on={showVP} label="VP" onClick={() => set({ showVP: !showVP })} />
@@ -216,21 +227,21 @@ export default function Workspace() {
                 )}
                 <div className="min-h-[380px] flex-1">
                   {(wtab === "model" || wtab === "construction" || wtab === "dimensions" || wtab === "sheet") ? (
-                    <Viewer3D />
-                  ) : solid ? (
-                    <div className="h-full w-full overflow-hidden rounded-2xl border-2 border-slate-700">
-                      <LabViewsSVG solid={solid} reveal={5} activePointId={selectedPoint} animateProjectors={wtab === "projection"} sweeping={false} sheet={wtab !== "projection"} />
+                    <div data-tour="3d-view" className="h-full w-full">
+                      <Viewer3D />
                     </div>
-                  ) : null}
+                  ) : (
+                    <TransitionCanvas sheet={wtab !== "projection"} />
+                  )}
                 </div>
                 {wtab === "dimensions" && (
-                  <div className="glass rounded-2xl p-3">
+                  <div data-tour="dimensions" className="glass scroll-mt-3 rounded-2xl p-3">
                     <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">Dimensions — from the live model</div>
                     <div className="mt-2"><DimensionList /></div>
                   </div>
                 )}
                 {wtab === "export" && solid && (
-                  <div className="glass rounded-2xl p-3">
+                  <div data-tour="export" className="glass scroll-mt-3 rounded-2xl p-3">
                     <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">Export — vector output, true millimeters</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button onClick={() => downloadSVG("lab-canvas", `geodraft-${solid.kind}-projection.svg`)} className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-4 py-2 text-[12.5px] font-bold text-slate-100 hover:border-cyan-300/40">
@@ -270,13 +281,13 @@ export default function Workspace() {
               {/* right */}
               <div className="glass flex min-h-[420px] flex-col rounded-2xl p-3">
                 <div className="flex items-center gap-1.5">
-                  {(["front", "top", "side", "all"] as ViewTab[]).map((t) => (
+                  {(["front", "top", "side", "all", "model"] as ViewTab[]).map((t) => (
                     <button
                       key={t}
                       onClick={() => setTab(t)}
-                      className={`rounded-lg px-3 py-1.5 font-mono text-[11px] font-bold uppercase ${tab === t ? "bg-cyan-400 text-slate-950" : "border border-white/10 text-slate-300"}`}
+                      className={`rounded-lg px-2.5 py-1.5 font-mono text-[11px] font-bold uppercase ${tab === t ? "bg-cyan-400 text-slate-950" : "border border-white/10 text-slate-300"}`}
                     >
-                      {t === "all" ? "All Views" : t}
+                      {t === "all" ? "All" : t === "model" ? "Model" : t}
                     </button>
                   ))}
                   <button onClick={explainView} className="ml-auto inline-flex items-center gap-1 rounded-lg border border-fuchsia-300/30 px-2.5 py-1.5 text-[11px] text-fuchsia-200">
@@ -284,7 +295,9 @@ export default function Workspace() {
                   </button>
                 </div>
                 <div className="mt-2 min-h-[340px] flex-1 overflow-hidden rounded-xl border border-white/10">
-                  {solid && (tab === "all" ? <AllViews solid={solid} /> : <ProjectionSVG solid={solid} view={tab} />)}
+                  {solid && (tab === "model" ? (
+                    <div className="h-full p-2"><ModelInspector solid={solid} /></div>
+                  ) : tab === "all" ? <AllViews solid={solid} /> : <ProjectionSVG solid={solid} view={tab} />)}
                 </div>
                 <button onClick={() => set({ sidebar: "Lab" })} className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-fuchsia-400 px-3 py-2 text-[12.5px] font-bold text-slate-950">
                   <PencilRuler size={14} /> Open Projection Lab — animated projectors + drawing guide
@@ -301,7 +314,7 @@ export default function Workspace() {
                 )}
               </div>
             </div>
-            <div id="steps-bar" className="scroll-mt-3 p-3 pt-0"><StepsBar /></div>
+            <div id="steps-bar" data-tour="construction" className="scroll-mt-3 p-3 pt-0"><StepsBar /></div>
           </>
         ) : sidebar === "Lab" ? (
           <div className="min-h-0 flex-1 p-3">
@@ -348,6 +361,47 @@ export default function Workspace() {
         <Footer compact />
       </div>
       <DrawingSheet />
+    </div>
+  );
+}
+
+const TRANSITION_CAPTIONS = ["", "XY reference line", "Top view rising", "Projectors casting", "Front + Side views", "Dimensions + traces"];
+
+/** Signature 3D → 2D transition: staged reveal driven by the live projection engine. */
+function TransitionCanvas({ sheet }: { sheet: boolean }) {
+  const solid = useStore((s) => s.solid);
+  const selectedPoint = useStore((s) => s.selectedPoint);
+  const wtab = useStore((s) => s.wtab);
+  const [reveal, setReveal] = useState(0);
+  const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+  useEffect(() => {
+    setReveal(reduced ? 5 : 0);
+  }, [wtab, solid, reduced]);
+
+  useEffect(() => {
+    if (reduced || reveal >= 5) return;
+    const t = setTimeout(() => setReveal(reveal + 1), 430);
+    return () => clearTimeout(t);
+  }, [reveal, reduced]);
+
+  if (!solid) return null;
+  return (
+    <div data-tour="projection-view" className="relative h-full w-full overflow-hidden rounded-2xl border-2 border-slate-700">
+      <LabViewsSVG solid={solid} reveal={reveal} activePointId={selectedPoint} animateProjectors sweeping={reveal < 5} sheet={sheet} />
+      {!reduced && reveal < 5 && (
+        <div className="pointer-events-none absolute left-3 top-3 rounded-lg border border-cyan-300/30 bg-black/70 px-3 py-1.5 font-mono text-[11px] text-cyan-200">
+          3D → 2D · {TRANSITION_CAPTIONS[reveal + 1] ?? ""}
+        </div>
+      )}
+      {reveal >= 5 && (
+        <button
+          onClick={() => setReveal(reduced ? 5 : 0)}
+          className="absolute bottom-2 right-2 rounded-lg border border-white/10 bg-black/60 px-2.5 py-1 font-mono text-[10.5px] text-slate-300 hover:border-cyan-300/40"
+        >
+          Replay transition
+        </button>
+      )}
     </div>
   );
 }

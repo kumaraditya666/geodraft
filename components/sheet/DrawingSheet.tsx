@@ -1,5 +1,6 @@
 "use client";
-import { X, Download } from "lucide-react";
+import { useState } from "react";
+import { X, Download, ZoomIn, ZoomOut, Maximize } from "lucide-react";
 import { useStore } from "@/store/useStore";
 import AllViews from "@/components/projection/AllViews";
 
@@ -21,6 +22,7 @@ export default function DrawingSheet() {
   const scale = useStore((s) => s.scale);
   const unit = useStore((s) => s.unit);
   const method = useStore((s) => s.projectionMethod);
+  const [zoom, setZoom] = useState(1);
 
   if (!sheetOpen || !solid) return null;
 
@@ -58,7 +60,7 @@ export default function DrawingSheet() {
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur">
-      <div className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-2xl bg-[#f8fafc] p-6 text-slate-900">
+      <div data-tour="drawing-sheet" className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-2xl bg-[#f8fafc] p-6 text-slate-900">
         <div className="flex items-center justify-between">
           <div className="font-mono text-[11px] uppercase tracking-[0.25em] text-slate-500">Drawing Sheet • A4 • First-angle</div>
           <div className="flex gap-2">
@@ -69,8 +71,16 @@ export default function DrawingSheet() {
         </div>
         <h2 className="font-display mt-2 text-xl font-bold">Orthographic Projections — {solid.kind.toUpperCase()}</h2>
         <p className="mt-1 text-[13px] text-slate-600">{question}</p>
-        <div id="sheet-svg" className="mt-4 overflow-hidden rounded-lg border-2 border-slate-900">
-          <AllViews solid={solid} />
+        <div className="mt-2 flex items-center gap-1.5">
+          <button onClick={() => setZoom((z) => Math.min(2.5, Math.round((z + 0.25) * 100) / 100))} className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11.5px] font-bold"><ZoomIn size={13} /> Zoom</button>
+          <button onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))} className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11.5px] font-bold"><ZoomOut size={13} /></button>
+          <button onClick={() => setZoom(1)} className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11.5px] font-bold"><Maximize size={13} /> Fit Sheet</button>
+          <span className="font-mono text-[11px] text-slate-500">{Math.round(zoom * 100)}% · scroll to pan</span>
+        </div>
+        <div className="mt-2 max-h-[52vh] overflow-auto rounded-lg border-2 border-slate-900">
+          <div id="sheet-svg" className="overflow-hidden" style={{ zoom }}>
+            <AllViews solid={solid} />
+          </div>
         </div>
         <div className="mt-4 grid grid-cols-4 gap-px overflow-hidden rounded-lg border-2 border-slate-900 bg-slate-900 text-[12px]">
           {[
