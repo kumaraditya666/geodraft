@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Box, DraftingCompass, GraduationCap, MousePointerClick, Play, Ruler, ScanLine, Layers, FileOutput, Terminal } from "lucide-react";
@@ -8,11 +9,51 @@ import { useTutor } from "@/components/tutor/TutorContext";
 import type { WorkspaceTab } from "@/store/useStore";
 import { EXAMPLES } from "@/lib/examples";
 import Footer from "@/components/ui/Footer";
-import HeroScene from "./HeroScene";
+import { engineStatus } from "@/lib/landing/heroContent";
+
+function EngineStatusStrip() {
+  const [status] = useState(() => engineStatus());
+  return (
+    <div className="mt-3 flex items-center gap-2 font-mono text-[10.5px] text-slate-500">
+      <span className={`h-1.5 w-1.5 rounded-full ${status.ok ? "animate-pulse bg-emerald-300" : "bg-red-400"}`} />
+      <span className={status.ok ? "" : "text-red-300"}>{status.detail}</span>
+    </div>
+  );
+}
+
+const PHASES = ["01 · OBJECT", "02 · PROJECTIONS", "03 · DIMENSIONS", "04 · SHEET"];
+
+function ScrollPhase() {
+  const [phase, setPhase] = useState(0);
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY + window.innerHeight * 0.55;
+      const at = (id: string) => document.getElementById(id)?.offsetTop ?? Infinity;
+      let p = 0;
+      if (y > at("examples")) p = 1;
+      if (y > at("features")) p = 2;
+      if (y > at("learn-strip")) p = 3;
+      setPhase(p);
+      setPast(window.scrollY > window.innerHeight * 0.7);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  if (!past) return null;
+  return (
+    <div className="fixed bottom-5 left-5 z-40 hidden rounded-full border border-white/10 bg-black/70 px-3.5 py-1.5 font-mono text-[10.5px] tracking-[0.2em] text-cyan-200 backdrop-blur md:block">
+      {PHASES[phase]}
+    </div>
+  );
+}
 import ExampleCard from "./ExampleCard";
 import FeaturePreview from "./FeaturePreview";
 import { buildProjection } from "@/lib/projection/projectionEngine";
 import { measuredAngles } from "@/lib/projection/angleEngine";
+
+const HeroStage = dynamic(() => import("./HeroStage"), { ssr: false, loading: () => <div className="h-[560px] w-full animate-pulse rounded-3xl border border-white/10 bg-[#04060b] md:h-[620px]" /> });
 
 type StorePatch = Partial<ReturnType<typeof useStore.getState>>;
 
@@ -111,8 +152,7 @@ export default function LandingPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#05070d]">
-      <div className="ed-grid-bg absolute inset-0" />
-      <HeroScene />
+      <div className="ed-grid-bg pointer-events-none absolute inset-0 opacity-60" />
 
       <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <div className="flex items-center gap-2.5">
@@ -134,11 +174,14 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-6xl px-6 pb-20 pt-10 md:pt-16">
-        <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+      <main className="relative z-10 mx-auto max-w-6xl px-6 pb-20 pt-10 md:pt-14">
+        <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="relative">
+          <div aria-hidden className="wordmark-outline pointer-events-none absolute -top-10 left-0 select-none md:-top-16">
+            GEODRAFT
+          </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-[12px] text-cyan-200">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />
-            AI Engineering Drawing & Orthographic Visualizer
+            SYSTEM // ENGINEERING GRAPHICS · HP · VP · XY
           </div>
           <h1 className="font-display mt-5 max-w-3xl text-5xl font-bold leading-[1.02] tracking-tight md:text-7xl">
             Turn Engineering Problems <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-fuchsia-400 bg-clip-text text-transparent">Into Geometry.</span>
@@ -149,6 +192,15 @@ export default function LandingPage() {
           <p className="mt-2 max-w-2xl text-[15px] text-slate-400">
             Describe a solid. See its 3D orientation, orthographic projections, dimensions and construction steps.
           </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.2 }}
+          className="mt-6"
+        >
+          <HeroStage />
         </motion.div>
 
         <motion.div
@@ -202,6 +254,7 @@ export default function LandingPage() {
             </button>
             <span className="ml-auto hidden font-mono text-[11px] text-slate-500 md:block">deterministic parser • no API key needed</span>
           </div>
+          <EngineStatusStrip />
         </motion.div>
 
         <div id="examples" data-tour="examples" className="mt-6 grid scroll-mt-6 grid-cols-2 gap-2.5 md:grid-cols-4">
@@ -233,7 +286,7 @@ export default function LandingPage() {
           ))}
         </div>
 
-        <div className="glass mt-8 flex flex-col items-start gap-3 rounded-2xl p-6 sm:flex-row sm:items-center">
+        <div id="learn-strip" className="glass mt-8 flex scroll-mt-6 flex-col items-start gap-3 rounded-2xl p-6 sm:flex-row sm:items-center">
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-cyan-400/15 text-cyan-300 glow-border">
             <GraduationCap size={22} />
           </div>
@@ -265,6 +318,7 @@ export default function LandingPage() {
         </div>
       </main>
       <Footer />
+      <ScrollPhase />
       {stages && (
         <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => { setStages(null); setStageIdx(0); router.push("/visualizer"); }}>
           <div className="glass glow-border w-full max-w-md rounded-2xl p-5" onClick={(e) => e.stopPropagation()}>

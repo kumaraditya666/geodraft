@@ -176,6 +176,17 @@ svg text {
   animation: feat-drop-dot 2.6s ease-in-out infinite;
 }
 
+.wordmark-outline {
+  font-family: "Space Grotesk", Inter, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(64px, 12vw, 150px);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(148, 163, 184, 0.16);
+  opacity: 0.9;
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,

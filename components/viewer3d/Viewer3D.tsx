@@ -363,8 +363,16 @@ function ReferencePlanes({ solid }: { solid: BuiltSolid | null }) {
             <planeGeometry args={[ext * 2, h]} />
             <meshBasicMaterial color="#a78bfa" transparent opacity={0.06} side={THREE.DoubleSide} depthWrite={false} />
           </mesh>
+          {/* profile plane (side-view plane, x = 0) */}
+          <mesh position={[0, h / 2, ext * 0.18]} rotation={[0, Math.PI / 2, 0]}>
+            <planeGeometry args={[ext, h]} />
+            <meshBasicMaterial color="#34d399" transparent opacity={0.05} side={THREE.DoubleSide} depthWrite={false} />
+          </mesh>
           <Html position={[ext * 0.95, h - 0.25, 0]} center distanceFactor={12}>
             <div className="rounded border border-violet-300/40 bg-slate-950/80 px-2 py-0.5 font-mono text-[10px] font-bold text-violet-200">VP</div>
+          </Html>
+          <Html position={[-0.35, h - 0.25, ext * 0.55]} center distanceFactor={12}>
+            <div className="rounded border border-emerald-300/40 bg-slate-950/80 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-200">PP</div>
           </Html>
         </group>
       )}
